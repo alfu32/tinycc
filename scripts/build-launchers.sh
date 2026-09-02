@@ -28,7 +28,7 @@ for archive in "${archives[@]}"; do
     mkdir -p "$destination"
     case "$archive" in
         *.tar.gz) tar -xzf "$archive" -C "$destination" ;;
-        *.zip) unzip -q "$archive" -d "$destination" ;;
+        *.zip) python3 scripts/extract-windows-archive.py "$archive" "$destination" ;;
     esac
     test -d "$destination/tinycc"
     (
