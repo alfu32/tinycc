@@ -1,8 +1,11 @@
 package org.tinycc.cli;
 
+import java.io.BufferedWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import org.tinycc.TinyCC;
 
 /** Command-line proxy for the TinyCC embed JAR. */
@@ -11,19 +14,116 @@ public final class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && args[0].equals("--launcher")) {
+            createLauncher(args);
+            return;
+        }
         if (args.length != 3 || (!args[0].equals("exe") && !args[0].equals("dll"))) {
             System.err.println("usage: java -jar tinycc-cli.jar <exe|dll> <source.c> <output>");
+            System.err.println("   or: java -jar tinycc-cli.jar --launcher python <source.c> [-o <library>] [tcc options]");
             System.exit(2);
         }
         Path sourcePath = Path.of(args[1]).toAbsolutePath();
-        String source = "#line 1 \"" + sourcePath.toString().replace("\\", "\\\\")
-                .replace("\"", "\\\"") + "\"\n"
-                + Files.readString(sourcePath, StandardCharsets.UTF_8);
+        String source = sourceWithLocation(sourcePath);
         int result = TinyCC.compile(
                 source,
                 args[0].equals("exe") ? TinyCC.OutputType.EXECUTABLE : TinyCC.OutputType.DYNAMIC_LIBRARY,
                 Path.of(args[2]),
                 System.err::println);
         System.exit(result == 0 ? 0 : 1);
+    }
+
+    private static void createLauncher(String[] args) throws Exception {
+        if (args.length < 3 || !args[1].equals("python")) {
+            System.err.println("usage: java -jar tinycc-cli.jar --launcher python <source.c> [-o <library>] [tcc options]");
+            System.exit(2);
+        }
+        Path sourcePath = Path.of(args[2]).toAbsolutePath();
+        Path libraryPath = defaultLibraryPath(sourcePath);
+        List<String> options = new ArrayList<>();
+        for (int index = 3; index < args.length; index++) {
+            if (args[index].equals("-o")) {
+                if (++index == args.length) {
+                    throw new IllegalArgumentException("-o requires a library path");
+                }
+                libraryPath = Path.of(args[index]).toAbsolutePath();
+            } else {
+                options.add(args[index]);
+            }
+        }
+
+        // Unix TinyCC already exports all global symbols from a shared object.
+        // On Windows, -rdynamic marks main for the PE export table.  It is also
+        // harmless on Unix and lets one command work for every host platform.
+        options.add("-rdynamic");
+        int result = TinyCC.compile(
+                sourceWithLocation(sourcePath), TinyCC.OutputType.DYNAMIC_LIBRARY,
+                libraryPath, joinOptions(options), System.err::println);
+        if (result != 0) {
+            System.exit(1);
+        }
+
+        Path launcherPath = launcherPath(libraryPath);
+        try (BufferedWriter writer = Files.newBufferedWriter(launcherPath, StandardCharsets.UTF_8)) {
+            writer.write(pythonLauncher(libraryPath.getFileName().toString()));
+        }
+        System.out.println("created " + libraryPath);
+        System.out.println("created " + launcherPath);
+    }
+
+    private static String sourceWithLocation(Path sourcePath) throws java.io.IOException {
+        return "#line 1 \"" + sourcePath.toString().replace("\\", "\\\\")
+                .replace("\"", "\\\"") + "\"\n"
+                + Files.readString(sourcePath, StandardCharsets.UTF_8);
+    }
+
+    private static Path defaultLibraryPath(Path sourcePath) {
+        String name = sourcePath.getFileName().toString();
+        int suffix = name.lastIndexOf('.');
+        String stem = suffix > 0 ? name.substring(0, suffix) : name;
+        String os = System.getProperty("os.name").toLowerCase();
+        String extension = os.contains("win") ? ".dll" : os.contains("mac") ? ".dylib" : ".so";
+        return sourcePath.resolveSibling(stem + extension);
+    }
+
+    private static Path launcherPath(Path libraryPath) {
+        String name = libraryPath.getFileName().toString();
+        int suffix = name.lastIndexOf('.');
+        String stem = suffix > 0 ? name.substring(0, suffix) : name;
+        return libraryPath.resolveSibling(stem + ".py");
+    }
+
+    private static String joinOptions(List<String> options) {
+        StringBuilder result = new StringBuilder();
+        for (String option : options) {
+            if (result.length() > 0) {
+                result.append(' ');
+            }
+            result.append('"').append(option.replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
+        }
+        return result.toString();
+    }
+
+    private static String pythonLauncher(String libraryName) {
+        String quotedLibrary = libraryName.replace("\\", "\\\\").replace("'", "\\'");
+        return """
+                #!/usr/bin/env python3
+                # Generated by tinycc-cli.jar. It forwards this script's arguments
+                # to int main(int argc, char **argv) in the adjacent shared library.
+                import ctypes
+                import os
+                import sys
+                from pathlib import Path
+
+                library = ctypes.CDLL(str(Path(__file__).with_name('%s')))
+                main = library.main
+                main.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_char_p)]
+                main.restype = ctypes.c_int
+                argv = [os.fsencode(sys.argv[0])] + [os.fsencode(arg) for arg in sys.argv[1:]]
+                argv_c = (ctypes.c_char_p * (len(argv) + 1))()
+                for index, argument in enumerate(argv):
+                    argv_c[index] = argument
+                raise SystemExit(main(len(argv), argv_c))
+                """.formatted(quotedLibrary);
     }
 }

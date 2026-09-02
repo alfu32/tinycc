@@ -39,12 +39,24 @@ public final class TinyCC {
     public static int compile(
             String source, OutputType outputType, Path outputPath,
             DiagnosticListener diagnostics) {
+        return compile(source, outputType, outputPath, "", diagnostics);
+    }
+
+    /**
+     * Compiles C source with command-line-compatible TinyCC options.
+     *
+     * <p>The output type and output path are controlled by this API; do not
+     * pass {@code -o}, {@code -shared}, or {@code -run} in {@code options}.</p>
+     */
+    public static int compile(
+            String source, OutputType outputType, Path outputPath, String options,
+            DiagnosticListener diagnostics) {
         if (source == null || outputType == null || outputPath == null) {
             throw new NullPointerException("source, outputType, and outputPath are required");
         }
         return compileNative(
                 RUNTIME_DIRECTORY.toString(), source, outputType.nativeValue,
-                outputPath.toAbsolutePath().toString(), diagnostics);
+                outputPath.toAbsolutePath().toString(), options == null ? "" : options, diagnostics);
     }
 
     public static int compileExecutable(
@@ -59,7 +71,7 @@ public final class TinyCC {
 
     private static native int compileNative(
             String runtimeDirectory, String source, int outputType, String outputPath,
-            DiagnosticListener diagnostics);
+            String options, DiagnosticListener diagnostics);
 
     private static Path loadNativeBundle() {
         String target = target();

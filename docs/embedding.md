@@ -42,6 +42,23 @@ input and publishes these extra GitHub Release assets:
 - `tinycc.pyz` is runnable with `python3 tinycc.pyz exe input.c output` (or
   `dll`). Its `tinycc.Compiler` class is also a direct `ctypes` API.
 
+The CLI can also compile a conventional C `main` into a shared library and
+generate an adjacent Python launcher:
+
+    java -jar tinycc-cli.jar --launcher python file.c -Iinclude -DDEBUG
+
+That creates `file.so` and `file.py` on Linux, `file.dylib` and `file.py` on
+macOS, or `file.dll` and `file.py` on Windows. The generated script forwards
+its own arguments to `int main(int argc, char **argv)` and exits with the
+return value of `main`. Use `-o path/to/library` to choose a different native
+library name; the Python launcher uses the same filename with a `.py` suffix.
+All other arguments are passed to TinyCC as compiler options.
+
+No source rewrite is performed: `main` remains `main`. TinyCC exports global
+symbols from Unix shared libraries, and the facade adds `-rdynamic` so that
+`main` is also exported from Windows DLLs. This mode requires the two-argument
+`main` signature; if `main` calls `exit()`, it exits the Python process too.
+
 The JAR and Python launcher deliberately carry all supported native targets;
 they do not need a Maven or PyPI repository. For a smaller application
 distribution, unpack the platform-specific native release archive and point
