@@ -9,15 +9,18 @@ work_directory=$(mktemp -d)
 trap 'rm -rf "$work_directory"' EXIT
 
 mkdir -p "$work_directory/native" "$output_directory"
-shopt -s nullglob
-archives=("$archive_directory"/tinycc-*.tar.gz "$archive_directory"/tinycc-*.zip)
+mapfile -d '' archives < <(
+    find "$archive_directory" -type f \( -name 'tinycc-*.tar.gz' -o -name 'tinycc-*.zip' \) \
+        -print0 | LC_ALL=C sort -z
+)
 if [ "${#archives[@]}" -ne 6 ]; then
-    echo "expected six TinyCC native archives in $archive_directory, found ${#archives[@]}" >&2
+    echo "expected six TinyCC native archives below $archive_directory, found ${#archives[@]}" >&2
     exit 2
 fi
 
 for archive in "${archives[@]}"; do
     filename=$(basename "$archive")
+    cp "$archive" "$output_directory/$filename"
     platform=${filename#tinycc-}
     platform=${platform%.tar.gz}
     platform=${platform%.zip}

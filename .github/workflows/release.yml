@@ -84,7 +84,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: tinycc-*
-          path: release
+          path: release/native
           merge-multiple: true
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -92,14 +92,14 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Build JVM and Python launchers
-        run: bash scripts/build-launchers.sh release release
+        run: bash scripts/build-launchers.sh release/native release/assets
       - name: Publish archives to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_name }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release/* --clobber
+            gh release upload "$TAG" release/assets/* --clobber
           else
-            gh release create "$TAG" release/* --generate-notes
+            gh release create "$TAG" release/assets/* --generate-notes
           fi
