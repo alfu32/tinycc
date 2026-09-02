@@ -6,6 +6,8 @@ import ctypes
 import importlib.resources
 import os
 import platform
+import stat
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Callable, Literal
@@ -45,6 +47,7 @@ class Compiler:
 
     def __init__(self, bundle_directory: str | os.PathLike[str] | None = None):
         root = Path(bundle_directory) if bundle_directory else _unpack_bundle()
+        self._bundle_root = root
         windows = _target().startswith("windows-")
         native_directory = root / ("tinycc/bin" if windows else "tinycc/lib")
         self._runtime_directory = native_directory if windows else native_directory / "tcc"
@@ -93,6 +96,17 @@ class Compiler:
             return self._library.tcc_output_file(state, os.fsencode(output_path))
         finally:
             self._library.tcc_delete(state)
+
+    def execute_tcc(self, arguments: list[str]) -> int:
+        """Run the bundled native tcc command with its complete CLI semantics."""
+        windows = _target().startswith("windows-")
+        if windows:
+            command = [str(self._bundle_root / "tinycc/bin/tcc.exe")]
+        else:
+            compiler = self._bundle_root / "tinycc/bin/tcc-bin"
+            compiler.chmod(compiler.stat().st_mode | stat.S_IXUSR)
+            command = [str(compiler), "-B", str(self._runtime_directory)]
+        return subprocess.run([*command, *arguments], check=False).returncode
 
 
 __all__ = ["Compiler", "DiagnosticListener", "OutputKind"]

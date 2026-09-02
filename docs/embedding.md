@@ -42,7 +42,9 @@ input and publishes these extra GitHub Release assets:
   `TinyCC.compileDynamicLibrary()`. Supply a `DiagnosticListener` to receive
   errors and warnings as compilation happens.
 - `tinycc.pyz` is runnable with `python3 tinycc.pyz exe input.c output` (or
-  `dll`). Its `tinycc.Compiler` class is also a direct `ctypes` API.
+  `dll`). It accepts the complete native TCC command line too, for example
+  `python3 tinycc.pyz input.c -luuid -o output`. Its `tinycc.Compiler` class
+  is also a direct `ctypes` API.
 
 The CLI can also compile a conventional C `main` into a shared library and
 generate an adjacent Python, Java, or Kotlin launcher:
