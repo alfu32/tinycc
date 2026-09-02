@@ -32,8 +32,10 @@ a file performs relocation itself.
 The manual **native release bundles** workflow takes a required `release_name`
 input and publishes these extra GitHub Release assets:
 
-- `tinycc-cli.jar` is runnable: `java -jar tinycc-cli.jar exe input.c output`
-  or replace `exe` with `dll`.
+- `tinycc-cli.jar` is a complete native `tcc` driver facade. Arguments are
+  passed verbatim to the bundled compiler, so this works exactly as with
+  `tcc`: `java -jar tinycc-cli.jar input.c -luuid -o output`. The optional
+  leading `exe` is ignored and leading `dll` adds `-shared`.
 - `tinycc-embed.jar` is the drop-in Java/Kotlin library. It bundles the JNI
   bridge and all six native TinyCC payloads, selects the current host, extracts
   it once, and exposes `TinyCC.compileExecutable()` and
@@ -43,16 +45,22 @@ input and publishes these extra GitHub Release assets:
   `dll`). Its `tinycc.Compiler` class is also a direct `ctypes` API.
 
 The CLI can also compile a conventional C `main` into a shared library and
-generate an adjacent Python launcher:
+generate an adjacent Python, Java, or Kotlin launcher:
 
     java -jar tinycc-cli.jar --launcher python file.c -Iinclude -DDEBUG
+    java -jar tinycc-cli.jar --launcher java file.c
+    java -jar tinycc-cli.jar --launcher kotlin file.c
 
-That creates `file.so` and `file.py` on Linux, `file.dylib` and `file.py` on
-macOS, or `file.dll` and `file.py` on Windows. The generated script forwards
-its own arguments to `int main(int argc, char **argv)` and exits with the
-return value of `main`. Use `-o path/to/library` to choose a different native
-library name; the Python launcher uses the same filename with a `.py` suffix.
-All other arguments are passed to TinyCC as compiler options.
+That creates `file.so` and a `file.py`/`FileLauncher.java`/`FileLauncher.kt`
+companion on Linux, `file.dylib` on macOS, or `file.dll` on Windows. The
+generated launcher forwards its own arguments to `int main(int argc, char
+**argv)` and exits with the return value of `main`. `kotln` is accepted as an
+alias for `kotlin`. Use `-o path/to/library` to choose a different native
+library name. All remaining arguments are passed to TinyCC.
+
+Java and Kotlin launcher sources use `tinycc-embed.jar` to call the exported
+library entry point. Compile them with that JAR on the classpath; a Kotlin
+launcher additionally needs the normal Kotlin runtime.
 
 No source rewrite is performed: `main` remains `main`. TinyCC exports global
 symbols from Unix shared libraries, and the facade adds `-rdynamic` so that

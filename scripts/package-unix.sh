@@ -44,7 +44,7 @@ case "$(uname -s)" in
   Linux)
     cc -shared -fPIC bindings/native/tcc_jni.c -I. \
       -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" \
-      -L"$payload_root/lib" -ltcc -Wl,-rpath,'$ORIGIN' \
+      -L"$payload_root/lib" -ltcc -ldl -Wl,-rpath,'$ORIGIN' \
       -o "$payload_root/lib/libtinycc_jni.so"
     ;;
   Darwin)

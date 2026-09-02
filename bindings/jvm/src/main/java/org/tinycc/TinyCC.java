@@ -5,6 +5,11 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -26,7 +31,8 @@ public final class TinyCC {
         }
     }
 
-    private static final Path RUNTIME_DIRECTORY = loadNativeBundle();
+    private static final NativeBundle NATIVE_BUNDLE = loadNativeBundle();
+    private static final Path RUNTIME_DIRECTORY = NATIVE_BUNDLE.runtimeDirectory();
 
     private TinyCC() {
     }
@@ -69,11 +75,46 @@ public final class TinyCC {
         return compile(source, OutputType.DYNAMIC_LIBRARY, outputPath, diagnostics);
     }
 
+    /**
+     * Runs the bundled native {@code tcc} command with its exact command-line
+     * semantics. This is the full-driver counterpart to {@link #compile}.
+     */
+    public static int executeTcc(String... arguments) throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>();
+        if (NATIVE_BUNDLE.windows()) {
+            command.add(NATIVE_BUNDLE.nativeDirectory().resolve("tcc.exe").toString());
+        } else {
+            Path compiler = NATIVE_BUNDLE.root().resolve("tinycc/bin/tcc-bin");
+            makeExecutable(compiler);
+            command.add(compiler.toString());
+            command.add("-B");
+            command.add(RUNTIME_DIRECTORY.toString());
+        }
+        command.addAll(Arrays.asList(arguments));
+        Process process = new ProcessBuilder(command).inheritIO().start();
+        return process.waitFor();
+    }
+
+    /**
+     * Invokes {@code int main(int argc, char **argv)} exported by a shared
+     * library. The library path is provided as {@code argv[0]}.
+     */
+    public static int runLibraryMain(Path library, String... arguments) {
+        if (library == null || arguments == null) {
+            throw new NullPointerException("library and arguments are required");
+        }
+        String[] argv = new String[arguments.length + 1];
+        argv[0] = library.toAbsolutePath().toString();
+        System.arraycopy(arguments, 0, argv, 1, arguments.length);
+        return runLibraryMainNative(library.toAbsolutePath().toString(), argv);
+    }
+
     private static native int compileNative(
             String runtimeDirectory, String source, int outputType, String outputPath,
             String options, DiagnosticListener diagnostics);
+    private static native int runLibraryMainNative(String library, String[] argv);
 
-    private static Path loadNativeBundle() {
+    private static NativeBundle loadNativeBundle() {
         String target = target();
         String prefix = "native/" + target + "/";
         Path extractionDirectory;
@@ -103,10 +144,27 @@ public final class TinyCC {
             String suffix = windows ? ".dll" : target.startsWith("macos-") ? ".dylib" : ".so";
             System.load(nativeDirectory.resolve("libtcc" + suffix).toString());
             System.load(nativeDirectory.resolve("libtinycc_jni" + suffix).toString());
-            return windows ? nativeDirectory : nativeDirectory.resolve("tcc");
+            return new NativeBundle(
+                    extractionDirectory, nativeDirectory,
+                    windows ? nativeDirectory : nativeDirectory.resolve("tcc"), windows);
         } catch (IOException exception) {
             throw new IllegalStateException("could not unpack TinyCC native bundle for " + target, exception);
         }
+    }
+
+    private static void makeExecutable(Path executable) throws IOException {
+        try {
+            Files.setPosixFilePermissions(executable, EnumSet.of(
+                    PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE,
+                    PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_EXECUTE,
+                    PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_EXECUTE));
+        } catch (UnsupportedOperationException ignored) {
+            // Windows does not use POSIX execute permissions.
+        }
+    }
+
+    private record NativeBundle(
+            Path root, Path nativeDirectory, Path runtimeDirectory, boolean windows) {
     }
 
     private static InputStream resource(String name) throws IOException {

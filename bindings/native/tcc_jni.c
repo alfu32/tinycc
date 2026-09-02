@@ -1,12 +1,30 @@
 #include <jni.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "libtcc.h"
+
+#ifdef _WIN32
+# define WIN32_LEAN_AND_MEAN
+# include <windows.h>
+#else
+# include <dlfcn.h>
+#endif
 
 struct DiagnosticContext {
     JNIEnv *env;
     jobject listener;
     jmethodID on_diagnostic;
 };
+
+static char *copy_string(const char *source)
+{
+    size_t length = strlen(source) + 1;
+    char *copy = malloc(length);
+    if (copy)
+        memcpy(copy, source, length);
+    return copy;
+}
 
 static void report_diagnostic(void *opaque, const char *message)
 {
@@ -99,5 +117,83 @@ done:
         (*env)->ReleaseStringUTFChars(env, source, source_chars);
     if (runtime_directory_chars)
         (*env)->ReleaseStringUTFChars(env, runtime_directory, runtime_directory_chars);
+    return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_org_tinycc_TinyCC_runLibraryMainNative(
+    JNIEnv *env, jclass clazz, jstring library, jobjectArray java_argv)
+{
+    const char *library_chars = NULL;
+    char **argv = NULL;
+    int argc, i, result = -1;
+    typedef int (*MainFunc)(int, char **);
+    MainFunc main_func = NULL;
+#ifdef _WIN32
+    HMODULE module = NULL;
+#else
+    void *module = NULL;
+#endif
+
+    (void)clazz;
+    if (!library || !java_argv) {
+        jclass exception = (*env)->FindClass(env, "java/lang/NullPointerException");
+        (*env)->ThrowNew(env, exception, "library and argv are required");
+        return -1;
+    }
+    library_chars = (*env)->GetStringUTFChars(env, library, NULL);
+    if (!library_chars)
+        goto done;
+
+#ifdef _WIN32
+    module = LoadLibraryA(library_chars);
+    if (module)
+        main_func = (MainFunc)(void *)GetProcAddress(module, "main");
+#else
+    module = dlopen(library_chars, RTLD_NOW | RTLD_LOCAL);
+    if (module)
+        main_func = (MainFunc)dlsym(module, "main");
+#endif
+    if (!main_func) {
+        jclass exception = (*env)->FindClass(env, "java/lang/UnsatisfiedLinkError");
+        (*env)->ThrowNew(env, exception, "shared library does not export main");
+        goto done;
+    }
+
+    argc = (*env)->GetArrayLength(env, java_argv);
+    argv = calloc((size_t)argc + 1, sizeof *argv);
+    if (!argv)
+        goto done;
+    for (i = 0; i < argc; ++i) {
+        jstring java_arg = (jstring)(*env)->GetObjectArrayElement(env, java_argv, i);
+        const char *arg;
+        if (!java_arg)
+            goto done;
+        arg = (*env)->GetStringUTFChars(env, java_arg, NULL);
+        if (arg) {
+            argv[i] = copy_string(arg);
+            (*env)->ReleaseStringUTFChars(env, java_arg, arg);
+        }
+        (*env)->DeleteLocalRef(env, java_arg);
+        if (!argv[i])
+            goto done;
+    }
+    result = main_func(argc, argv);
+
+done:
+    if (argv) {
+        for (i = 0; argv[i]; ++i)
+            free(argv[i]);
+        free(argv);
+    }
+#ifdef _WIN32
+    if (module)
+        FreeLibrary(module);
+#else
+    if (module)
+        dlclose(module);
+#endif
+    if (library_chars)
+        (*env)->ReleaseStringUTFChars(env, library, library_chars);
     return result;
 }
