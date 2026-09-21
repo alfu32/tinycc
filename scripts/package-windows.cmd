@@ -12,6 +12,8 @@ set "TARGET=%~1"
 set "ARCHIVE=%~f2"
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
 set "SYSROOT_BUNDLE=%ROOT%\sysroots-bundle-2026.09.21.tar.zst"
+set "SYSROOT_ARCH=%TARGET%"
+if "%TARGET%"=="arm64" set "SYSROOT_ARCH=aarch64"
 set "PAYLOAD=%ROOT%\.release\%TARGET%\tinycc"
 set "DEFINES=-DTCC_TARGET_PE"
 if "%TARGET%"=="x86_64" set "DEFINES=%DEFINES% -DTCC_TARGET_X86_64"
@@ -73,7 +75,7 @@ popd
 
 mkdir "%PAYLOAD%\bin" "%PAYLOAD%\include" "%PAYLOAD%\bin\lib"
 mkdir "%PAYLOAD%\sysroot"
-xcopy /e /i /q /y "%SYSROOT_STAGE%\sysroots-bundle-2026.09.21\sysroots\windows\%TARGET%\" "%PAYLOAD%\sysroot\" >nul
+xcopy /e /i /q /y "%SYSROOT_STAGE%\sysroots-bundle-2026.09.21\sysroots\windows\%SYSROOT_ARCH%\" "%PAYLOAD%\sysroot\" >nul
 copy /y "%SYSROOT_STAGE%\sysroots-bundle-2026.09.21\MANIFEST.json" "%PAYLOAD%\sysroot\MANIFEST.json" >nul
 if not exist "%PAYLOAD%\sysroot\include" exit /b 1
 copy /y "%ROOT%\win32\tcc.exe" "%PAYLOAD%\bin\tcc.exe" >nul
