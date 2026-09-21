@@ -1,0 +1,110 @@
+name: native release bundles
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: GitHub Release tag/name to create or update
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  unix:
+    name: ${{ matrix.id }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x86_64
+            runner: ubuntu-22.04
+          - id: linux-aarch64
+            runner: ubuntu-22.04-arm
+          - id: macos-x86_64
+            runner: macos-15-intel
+          - id: macos-aarch64
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build and test bundle
+        run: bash scripts/package-unix.sh "${{ matrix.id }}" "dist/tinycc-${{ matrix.id }}.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tinycc-${{ matrix.id }}
+          path: dist/tinycc-${{ matrix.id }}.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: ${{ matrix.id }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: windows-x86_64
+            runner: windows-2025
+            vc_arch: amd64
+            tcc_arch: x86_64
+          - id: windows-aarch64
+            runner: windows-11-arm
+            vc_arch: arm64
+            tcc_arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up MSVC and build bundle
+        shell: cmd
+        run: |
+          for /f "delims=" %%i in ('vswhere.exe -latest -property installationPath') do call "%%i\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.vc_arch }}
+          call scripts\package-windows.cmd ${{ matrix.tcc_arch }} dist\tinycc-${{ matrix.id }}.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tinycc-${{ matrix.id }}
+          path: dist/tinycc-${{ matrix.id }}.zip
+          if-no-files-found: error
+
+  publish-github-release:
+    needs: [unix, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@v4
+        with:
+          path: release/native
+          merge-multiple: true
+      - name: Verify downloaded native archives
+        run: |
+          find release -maxdepth 3 -type f -print | sort
+          test -d release/native
+      - name: Build JVM and Python launchers
+        run: bash scripts/build-launchers.sh release/native release/assets
+      - name: Publish archives to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/assets/* --clobber
+          else
+            gh release create "$TAG" release/assets/* --generate-notes
+          fi
