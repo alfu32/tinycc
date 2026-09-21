@@ -32,10 +32,11 @@ a file performs relocation itself.
 The manual **native release bundles** workflow takes a required `release_name`
 input and publishes these extra GitHub Release assets:
 
-- `tinycc-cli.jar` is a complete native `tcc` driver facade. Arguments are
-  passed verbatim to the bundled compiler, so this works exactly as with
-  `tcc`: `java -jar tinycc-cli.jar input.c -luuid -o output`. The optional
-  leading `exe` is ignored and leading `dll` adds `-shared`.
+- `tinycc-cli.jar` is a complete `tcc` driver facade. Arguments are passed
+  verbatim to `main` exported by the bundled `tcc-driver` shared library, so
+  this works exactly as with `tcc`: `java -jar tinycc-cli.jar input.c -luuid
+  -o output`. No child `tcc` executable is spawned. The optional leading
+  `exe` is ignored and leading `dll` adds `-shared`.
 - `tinycc-embed.jar` is the drop-in Java/Kotlin library. It bundles the JNI
   bridge and all six native TinyCC payloads, selects the current host, extracts
   it once, and exposes `TinyCC.compileExecutable()` and
@@ -43,8 +44,9 @@ input and publishes these extra GitHub Release assets:
   errors and warnings as compilation happens.
 - `tinycc.pyz` is runnable with `python3 tinycc.pyz exe input.c output` (or
   `dll`). It accepts the complete native TCC command line too, for example
-  `python3 tinycc.pyz input.c -luuid -o output`. Its `tinycc.Compiler` class
-  is also a direct `ctypes` API.
+  `python3 tinycc.pyz input.c -luuid -o output`, by calling the exported
+  `main` in `tcc-driver` through `ctypes`. Its `tinycc.Compiler` class is
+  also a direct `ctypes` API.
 
 The CLI can also compile a conventional C `main` into a shared library and
 generate an adjacent Python, Java, or Kotlin launcher:

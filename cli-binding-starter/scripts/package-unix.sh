@@ -32,9 +32,8 @@ cp scripts/tcc-launcher.sh "$payload_root/bin/tcc"
 chmod 755 "$payload_root/bin/tcc"
 cp COPYING README VERSION "$payload_root/"
 
-# Keep the full TCC command-line parser available through FFI.  The driver is
-# the same tcc.c main used by tcc-bin, but is loaded as a shared library and
-# called through its exported main function by the Java/Python facades.
+# Expose the complete tcc.c command-line driver as a shared-library export.
+# The Java/Python facades call its main function through FFI.
 "$payload_root/bin/tcc-bin" -B"$payload_root/lib/tcc" \
   -I"$source_root/include" -I"$source_root" -shared -fPIC -rdynamic \
   "$source_root/tcc.c" "$payload_root/lib/libtcc.a" \

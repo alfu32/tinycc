@@ -41,9 +41,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem Expose the complete tcc.c command-line driver as a DLL export.  The JVM
-rem and Python facades invoke this main function through FFI; they never spawn
-rem tcc.exe.
+rem Expose tcc.c main through a DLL; facades invoke it through FFI.
 tcc.exe -shared -rdynamic ..\tcc.c -L. -ltcc -o tcc-driver.dll
 if errorlevel 1 (
   popd
