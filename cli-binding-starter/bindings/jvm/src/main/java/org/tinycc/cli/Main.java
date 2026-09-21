@@ -17,6 +17,9 @@ public final class Main {
             createLauncher(args);
             return;
         }
+        if (args.length == 1 && args[0].equals("help")) {
+            args = new String[] {"--help"};
+        }
 
         // Compatibility shorthands. All other invocations are passed unchanged
         // to native tcc, including multiple inputs, -run, -E, and -ar.

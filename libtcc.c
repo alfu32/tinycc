@@ -1972,7 +1972,10 @@ PUB_FUNC int tcc_parse_args(TCCState *s, int *pargc, char ***pargv)
             continue;
         case TCC_OPTION_sysroot:
             tcc_set_sysroot(s, optarg);
-            break;
+            /* Like -B, this only configures the compiler.  Keep the parser
+               in its initial state so early actions such as -h, -hh, and
+               -print-search-dirs can still be requested afterwards. */
+            continue;
         case TCC_OPTION_l:
             args_parser_add_file(s, optarg, AFF_TYPE_LIB | (s->filetype & ~AFF_TYPE_MASK));
             break;
