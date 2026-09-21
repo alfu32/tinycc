@@ -1044,6 +1044,13 @@ LIBTCCAPI void tcc_set_sysroot(TCCState *s, const char *path)
     if (!path || !*path)
         return;
 #ifdef TCC_TARGET_PE
+    /* LLVM-MinGW sysroots select their GCC-compatible headers based on these
+       macros.  Keep the compatibility identity scoped to explicit sysroot
+       users so TCC's native Windows headers retain their normal behavior. */
+    tcc_define_symbol(s, "__GNUC__", "4");
+    tcc_define_symbol(s, "__GNUC_MINOR__", "2");
+    tcc_define_symbol(s, "__GNUC_PATCHLEVEL__", "0");
+    tcc_define_symbol(s, "__builtin_alloca", "alloca");
     snprintf(include_path, sizeof include_path, "%s/include", path);
     snprintf(library_path, sizeof library_path, "%s/lib", path);
     if (!s->nostdinc)

@@ -79,12 +79,6 @@
     #endif
 
 #if defined _WIN32
-    /* The bundled LLVM-MinGW sysroot uses GCC-compatible headers.  TCC
-       provides the corresponding va_list builtins, so expose the minimum
-       GCC identity those headers require while retaining TCC's target ABI. */
-    #define __GNUC__ 4
-    #define __GNUC_MINOR__ 2
-    #define __GNUC_PATCHLEVEL__ 0
     #define __declspec(x) __attribute__((x))
     #define __cdecl
 
