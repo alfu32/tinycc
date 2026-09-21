@@ -61,6 +61,9 @@ The payload matrix is:
 Every per-platform payload must contain the QuickJS command-line executable(s),
    dynamic QuickJS library, static QuickJS library where upstream supports it,
    public headers, runtime files/modules, and license/version/readme material.
+   For Linux and Windows, also carry the matching sysroot headers, libraries,
+   and CRT files from `sysroots-bundle-2026.09.21.tar.zst`; macOS must use the
+   host-provided SDK instead.
    Normally this includes qjs and qjsc, but inspect the actual source tree.
 
 Native ~tar.gz~ and ~zip~ files are allowed as *temporary GitHub Actions

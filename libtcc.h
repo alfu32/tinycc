@@ -26,6 +26,9 @@ LIBTCCAPI void tcc_delete(TCCState *s);
 /* set CONFIG_TCCDIR at runtime */
 LIBTCCAPI void tcc_set_lib_path(TCCState *s, const char *path);
 
+/* set the default system headers, libraries, and CRT search root at runtime */
+LIBTCCAPI void tcc_set_sysroot(TCCState *s, const char *path);
+
 /* set error/warning callback (optional) */
 typedef void TCCErrorFunc(void *opaque, const char *msg);
 LIBTCCAPI void tcc_set_error_func(TCCState *s, void *error_opaque, TCCErrorFunc *error_func);

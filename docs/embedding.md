@@ -6,10 +6,18 @@ the static library, `libtcc.h`, and the private compiler runtime tree.  Keep
 that tree with the native library: it supplies TinyCC's headers and
 `libtcc1.a`.
 
+Linux and Windows bundles also contain the matching `sysroot/` extracted from
+`sysroots-bundle-2026.09.21.tar.zst`. The Java and Python facades select it by
+default and pass it to TCC for system headers, libraries, and CRT objects.
+User-supplied `--sysroot`, `-I`, and `-L` options remain available. macOS does
+not ship an SDK in this bundle and uses the host-provided system SDK.
+
 For a relocatable application, find that private tree at runtime and pass it
-to every compiler state with `tcc_set_lib_path()`.  In the Unix bundles it is
-`lib/tcc`; in the Windows bundles it is `bin`, because the Windows DLL locates
-its runtime relative to itself.
+to every compiler state with `tcc_set_lib_path()`. In Linux and Windows
+bundles, also pass the extracted `sysroot/` to `tcc_set_sysroot()`; the Java
+and Python facades do this automatically. In the Unix bundles the private
+tree is `lib/tcc`; in the Windows bundles it is `bin`, because the Windows DLL
+locates its runtime relative to itself.
 
 The editor flow is:
 

@@ -11,6 +11,7 @@ if "%~2"=="" (
 set "TARGET=%~1"
 set "ARCHIVE=%~f2"
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
+set "SYSROOT_BUNDLE=%ROOT%\sysroots-bundle-2026.09.21.tar.zst"
 set "PAYLOAD=%ROOT%\.release\%TARGET%\tinycc"
 set "DEFINES=-DTCC_TARGET_PE"
 if "%TARGET%"=="x86_64" set "DEFINES=%DEFINES% -DTCC_TARGET_X86_64"
@@ -21,6 +22,14 @@ if "%DEFINES%"=="-DTCC_TARGET_PE" (
 )
 
 if exist "%ROOT%\.release\%TARGET%" rmdir /s /q "%ROOT%\.release\%TARGET%"
+if not exist "%SYSROOT_BUNDLE%" (
+  echo missing Windows sysroot bundle: %SYSROOT_BUNDLE%
+  exit /b 2
+)
+set "SYSROOT_STAGE=%ROOT%\.release\%TARGET%\sysroot-stage"
+mkdir "%SYSROOT_STAGE%"
+tar --zstd -xf "%SYSROOT_BUNDLE%" -C "%SYSROOT_STAGE%"
+if errorlevel 1 exit /b 1
 pushd "%ROOT%\win32" || exit /b 1
 call build-tcc.bat -c cl -t %TARGET%
 if errorlevel 1 (
@@ -63,6 +72,10 @@ if errorlevel 1 (
 popd
 
 mkdir "%PAYLOAD%\bin" "%PAYLOAD%\include" "%PAYLOAD%\bin\lib"
+mkdir "%PAYLOAD%\sysroot"
+xcopy /e /i /q /y "%SYSROOT_STAGE%\sysroots-bundle-2026.09.21\sysroots\windows\%TARGET%\" "%PAYLOAD%\sysroot\" >nul
+copy /y "%SYSROOT_STAGE%\sysroots-bundle-2026.09.21\MANIFEST.json" "%PAYLOAD%\sysroot\MANIFEST.json" >nul
+if not exist "%PAYLOAD%\sysroot\include" exit /b 1
 copy /y "%ROOT%\win32\tcc.exe" "%PAYLOAD%\bin\tcc.exe" >nul
 copy /y "%ROOT%\win32\libtcc.dll" "%PAYLOAD%\bin\libtcc.dll" >nul
 copy /y "%ROOT%\win32\tcc-driver.dll" "%PAYLOAD%\bin\tcc-driver.dll" >nul
@@ -76,7 +89,7 @@ copy /y "%ROOT%\README" "%PAYLOAD%\README" >nul
 copy /y "%ROOT%\VERSION" "%PAYLOAD%\VERSION" >nul
 
 rem libtcc.dll derives its private runtime location from its own directory.
-"%PAYLOAD%\bin\tcc.exe" -run "%ROOT%\examples\ex1.c"
+"%PAYLOAD%\bin\tcc.exe" -B "%PAYLOAD%\bin" --sysroot "%PAYLOAD%\sysroot" -run "%ROOT%\examples\ex1.c"
 if errorlevel 1 exit /b %errorlevel%
 
 for %%I in ("%ARCHIVE%") do if not exist "%%~dpI" mkdir "%%~dpI"

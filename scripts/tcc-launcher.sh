@@ -4,4 +4,7 @@
 set -eu
 
 bindir=$(CDPATH= cd "$(dirname "$0")" && pwd)
+if [ -d "$bindir/../sysroot" ]; then
+    exec "$bindir/tcc-bin" -B "$bindir/../lib/tcc" --sysroot "$bindir/../sysroot" "$@"
+fi
 exec "$bindir/tcc-bin" -B "$bindir/../lib/tcc" "$@"

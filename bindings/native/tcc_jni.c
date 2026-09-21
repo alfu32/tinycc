@@ -43,10 +43,11 @@ static void report_diagnostic(void *opaque, const char *message)
 
 JNIEXPORT jint JNICALL
 Java_org_tinycc_TinyCC_compileNative(
-    JNIEnv *env, jclass clazz, jstring runtime_directory, jstring source,
+    JNIEnv *env, jclass clazz, jstring runtime_directory, jstring sysroot_directory, jstring source,
     jint output_type, jstring output_path, jstring options, jobject listener)
 {
     const char *runtime_directory_chars = NULL;
+    const char *sysroot_directory_chars = NULL;
     const char *source_chars = NULL;
     const char *output_path_chars = NULL;
     const char *options_chars = NULL;
@@ -63,11 +64,15 @@ Java_org_tinycc_TinyCC_compileNative(
     }
 
     runtime_directory_chars = (*env)->GetStringUTFChars(env, runtime_directory, NULL);
+    if (sysroot_directory && (*env)->GetStringLength(env, sysroot_directory) > 0)
+        sysroot_directory_chars = (*env)->GetStringUTFChars(env, sysroot_directory, NULL);
     source_chars = (*env)->GetStringUTFChars(env, source, NULL);
     output_path_chars = (*env)->GetStringUTFChars(env, output_path, NULL);
     if (options)
         options_chars = (*env)->GetStringUTFChars(env, options, NULL);
     if (!runtime_directory_chars || !source_chars || !output_path_chars
+        || (sysroot_directory && (*env)->GetStringLength(env, sysroot_directory) > 0
+            && !sysroot_directory_chars)
         || (options && !options_chars)) {
         result = -1;
         goto done;
@@ -97,9 +102,13 @@ Java_org_tinycc_TinyCC_compileNative(
     }
     tcc_set_lib_path(state, runtime_directory_chars);
     tcc_set_error_func(state, &context, report_diagnostic);
-    result = tcc_set_output_type(state, output_type);
-    if (result == 0 && options_chars && options_chars[0])
+    result = 0;
+    if (options_chars && options_chars[0])
         result = tcc_set_options(state, options_chars);
+    if (result == 0 && sysroot_directory_chars)
+        tcc_set_sysroot(state, sysroot_directory_chars);
+    if (result == 0)
+        result = tcc_set_output_type(state, output_type);
     if (result == 0)
         result = tcc_compile_string(state, source_chars);
     if (result == 0)
@@ -109,6 +118,8 @@ Java_org_tinycc_TinyCC_compileNative(
 done:
     if (options_chars)
         (*env)->ReleaseStringUTFChars(env, options, options_chars);
+    if (sysroot_directory_chars)
+        (*env)->ReleaseStringUTFChars(env, sysroot_directory, sysroot_directory_chars);
     if (listener_class)
         (*env)->DeleteLocalRef(env, listener_class);
     if (output_path_chars)

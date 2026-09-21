@@ -55,8 +55,11 @@ public final class TinyCC {
         if (source == null || outputType == null || outputPath == null) {
             throw new NullPointerException("source, outputType, and outputPath are required");
         }
+        Path sysroot = NATIVE_BUNDLE.sysroot();
+        String defaultSysroot = sysroot != null && (options == null || !options.contains("--sysroot"))
+                ? sysroot.toString() : "";
         return compileNative(
-                RUNTIME_DIRECTORY.toString(), source, outputType.nativeValue,
+                RUNTIME_DIRECTORY.toString(), defaultSysroot, source, outputType.nativeValue,
                 outputPath.toAbsolutePath().toString(), options == null ? "" : options, diagnostics);
     }
 
@@ -75,10 +78,23 @@ public final class TinyCC {
      * No child executable is spawned; the driver DLL/SO is loaded with JNI.
      */
     public static int executeTcc(String... arguments) {
-        String[] driverArguments = new String[arguments.length + 2];
+        boolean hasSysroot = false;
+        for (String argument : arguments) {
+            if (argument.equals("--sysroot") || argument.startsWith("--sysroot=")) {
+                hasSysroot = true;
+                break;
+            }
+        }
+        int injected = NATIVE_BUNDLE.sysroot() != null && !hasSysroot ? 2 : 0;
+        String[] driverArguments = new String[arguments.length + 2 + injected];
         driverArguments[0] = "-B";
         driverArguments[1] = RUNTIME_DIRECTORY.toString();
-        System.arraycopy(arguments, 0, driverArguments, 2, arguments.length);
+        int offset = 2;
+        if (injected != 0) {
+            driverArguments[offset++] = "--sysroot";
+            driverArguments[offset++] = NATIVE_BUNDLE.sysroot().toString();
+        }
+        System.arraycopy(arguments, 0, driverArguments, offset, arguments.length);
         return runLibraryMain(NATIVE_BUNDLE.driver(), driverArguments);
     }
 
@@ -97,7 +113,7 @@ public final class TinyCC {
     }
 
     private static native int compileNative(
-            String runtimeDirectory, String source, int outputType, String outputPath,
+            String runtimeDirectory, String sysrootDirectory, String source, int outputType, String outputPath,
             String options, DiagnosticListener diagnostics);
     private static native int runLibraryMainNative(String library, String[] argv);
 
@@ -131,17 +147,20 @@ public final class TinyCC {
             String suffix = windows ? ".dll" : target.startsWith("macos-") ? ".dylib" : ".so";
             System.load(nativeDirectory.resolve("libtcc" + suffix).toString());
             System.load(nativeDirectory.resolve("libtinycc_jni" + suffix).toString());
+            Path bundledSysroot = extractionDirectory.resolve("tinycc/sysroot");
             return new NativeBundle(
                     extractionDirectory, nativeDirectory,
                     windows ? nativeDirectory : nativeDirectory.resolve("tcc"),
-                    nativeDirectory.resolve("tcc-driver" + suffix), windows);
+                    nativeDirectory.resolve("tcc-driver" + suffix),
+                    Files.isDirectory(bundledSysroot) ? bundledSysroot : null,
+                    windows);
         } catch (IOException exception) {
             throw new IllegalStateException("could not unpack TinyCC native bundle for " + target, exception);
         }
     }
 
     private record NativeBundle(
-            Path root, Path nativeDirectory, Path runtimeDirectory, Path driver, boolean windows) {
+            Path root, Path nativeDirectory, Path runtimeDirectory, Path driver, Path sysroot, boolean windows) {
     }
 
     private static InputStream resource(String name) throws IOException {

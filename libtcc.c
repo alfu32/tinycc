@@ -1036,6 +1036,42 @@ LIBTCCAPI void tcc_set_lib_path(TCCState *s, const char *path)
     tcc_set_str(&s->tcc_lib_path, path);
 }
 
+LIBTCCAPI void tcc_set_sysroot(TCCState *s, const char *path)
+{
+    char include_path[1024];
+    char library_path[1024];
+
+    if (!path || !*path)
+        return;
+#ifdef TCC_TARGET_PE
+    snprintf(include_path, sizeof include_path, "%s/include", path);
+    snprintf(library_path, sizeof library_path, "%s/lib", path);
+    if (!s->nostdinc)
+        tcc_add_sysinclude_path(s, include_path);
+    if (!s->nostdlib_paths)
+        tcc_add_library_path(s, library_path);
+#else
+    snprintf(include_path, sizeof include_path, "%s/usr/include", path);
+    if (!s->nostdinc) {
+        tcc_add_sysinclude_path(s, include_path);
+        snprintf(include_path, sizeof include_path, "%s/include", path);
+        tcc_add_sysinclude_path(s, include_path);
+    }
+    snprintf(library_path, sizeof library_path, "%s/usr/lib", path);
+    if (!s->nostdlib_paths) {
+        tcc_add_library_path(s, library_path);
+        snprintf(library_path, sizeof library_path, "%s/lib", path);
+        tcc_add_library_path(s, library_path);
+    }
+    if (!s->nostdlib) {
+        snprintf(library_path, sizeof library_path, "%s/usr/lib", path);
+        tcc_split_path(s, &s->crt_paths, &s->nb_crt_paths, library_path);
+        snprintf(library_path, sizeof library_path, "%s/lib", path);
+        tcc_split_path(s, &s->crt_paths, &s->nb_crt_paths, library_path);
+    }
+#endif
+}
+
 /* add/update a 'DLLReference', Just find if level == -1  */
 ST_FUNC DLLReference *tcc_add_dllref(TCCState *s1, const char *dllname, int level)
 {
@@ -1554,6 +1590,7 @@ enum {
     TCC_OPTION_P,
     TCC_OPTION_L,
     TCC_OPTION_B,
+    TCC_OPTION_sysroot,
     TCC_OPTION_l,
     TCC_OPTION_bench,
     TCC_OPTION_bt,
@@ -1623,6 +1660,7 @@ static const TCCOption tcc_options[] = {
     { "P", TCC_OPTION_P, TCC_OPTION_HAS_ARG | TCC_OPTION_NOSEP },
     { "L", TCC_OPTION_L, TCC_OPTION_HAS_ARG },
     { "B", TCC_OPTION_B, TCC_OPTION_HAS_ARG },
+    { "-sysroot", TCC_OPTION_sysroot, TCC_OPTION_HAS_ARG },
     { "l", TCC_OPTION_l, TCC_OPTION_HAS_ARG },
     { "bench", TCC_OPTION_bench, 0 },
 #ifdef CONFIG_TCC_BACKTRACE
@@ -1925,6 +1963,9 @@ PUB_FUNC int tcc_parse_args(TCCState *s, int *pargc, char ***pargv)
             /* set tcc utilities path (mainly for tcc development) */
             tcc_set_lib_path(s, optarg);
             continue;
+        case TCC_OPTION_sysroot:
+            tcc_set_sysroot(s, optarg);
+            break;
         case TCC_OPTION_l:
             args_parser_add_file(s, optarg, AFF_TYPE_LIB | (s->filetype & ~AFF_TYPE_MASK));
             break;

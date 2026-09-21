@@ -76,6 +76,7 @@ static const char help[] =
     "  -std=version define __STDC_VERSION__ according to version (c11/gnu11)\n"
     "  -x[c|a|b|n]  specify type of the next infile (C,ASM,BIN,NONE)\n"
     "  -Bdir        set tcc's private include/library dir\n"
+    "  --sysroot dir use dir for system headers, libraries, and CRT files\n"
     "  -M[M]D       generate make dependency file [ignore system files]\n"
     "  -M[M]        as above but no other output\n"
     "  -MF file     specify dependency file name\n"

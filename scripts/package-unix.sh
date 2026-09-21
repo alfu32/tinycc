@@ -9,6 +9,7 @@ archive_path=${2:?"archive path is required"}
 source_root=$(pwd)
 release_root="$source_root/.release/$platform_id"
 payload_root="$release_root/tinycc"
+sysroot_bundle="${SYSROOT_BUNDLE:-$source_root/sysroots-bundle-2026.09.21.tar.zst}"
 
 case "$(uname -s)" in
   Linux)  shared_name=libtcc.so ;;
@@ -19,6 +20,26 @@ esac
 make distclean
 rm -rf "$release_root"
 mkdir -p "$payload_root"
+
+if [[ "$(uname -s)" == Linux ]]; then
+  test -f "$sysroot_bundle" || {
+    echo "missing Linux sysroot bundle: $sysroot_bundle" >&2
+    exit 2
+  }
+  sysroot_arch=${platform_id#linux-}
+  sysroot_stage=$(mktemp -d)
+  trap 'rm -rf "$sysroot_stage"' EXIT
+  tar --zstd -xf "$sysroot_bundle" -C "$sysroot_stage"
+  sysroot_source="$sysroot_stage/sysroots-bundle-2026.09.21/sysroots/linux/$sysroot_arch"
+  test -d "$sysroot_source/usr/include" || {
+    echo "sysroot has no headers for $platform_id" >&2
+    exit 2
+  }
+  mkdir -p "$payload_root/sysroot"
+  cp -a "$sysroot_source/." "$payload_root/sysroot/"
+  cp "$sysroot_stage/sysroots-bundle-2026.09.21/MANIFEST.json" \
+    "$payload_root/sysroot/MANIFEST.json"
+fi
 
 # Build the command-line compiler against static libtcc.  That makes the
 # executable itself relocatable; the launcher below supplies its runtime tree.

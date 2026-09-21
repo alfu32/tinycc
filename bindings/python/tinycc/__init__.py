@@ -49,6 +49,8 @@ class Compiler:
         windows = _target().startswith("windows-")
         native_directory = root / ("tinycc/bin" if windows else "tinycc/lib")
         self._runtime_directory = native_directory if windows else native_directory / "tcc"
+        candidate_sysroot = root / "tinycc/sysroot"
+        self._sysroot_directory = candidate_sysroot if candidate_sysroot.is_dir() else None
         suffix = ".dll" if windows else ".dylib" if _target().startswith("macos-") else ".so"
         self._library = ctypes.CDLL(str(native_directory / f"libtcc{suffix}"))
         self._driver_path = native_directory / f"tcc-driver{suffix}"
@@ -62,6 +64,7 @@ class Compiler:
         library.tcc_new.restype = ctypes.c_void_p
         library.tcc_delete.argtypes = [ctypes.c_void_p]
         library.tcc_set_lib_path.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        library.tcc_set_sysroot.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
         library.tcc_set_output_type.argtypes = [ctypes.c_void_p, ctypes.c_int]
         library.tcc_compile_string.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
         library.tcc_compile_string.restype = ctypes.c_int
@@ -91,6 +94,8 @@ class Compiler:
         try:
             self._library.tcc_set_lib_path(state, os.fsencode(self._runtime_directory))
             self._library.tcc_set_error_func(state, None, error_callback)
+            if self._sysroot_directory is not None:
+                self._library.tcc_set_sysroot(state, os.fsencode(self._sysroot_directory))
             if self._library.tcc_set_output_type(state, 2 if kind == "exe" else 4) != 0:
                 return -1
             if self._library.tcc_compile_string(state, source.encode("utf-8")) != 0:
@@ -105,8 +110,12 @@ class Compiler:
             os.fsencode(self._driver_path),
             b"-B",
             os.fsencode(self._runtime_directory),
-            *(os.fsencode(argument) for argument in arguments),
         ]
+        if self._sysroot_directory is not None and not any(
+            argument == "--sysroot" or argument.startswith("--sysroot=") for argument in arguments
+        ):
+            encoded.extend((b"--sysroot", os.fsencode(self._sysroot_directory)))
+        encoded.extend(os.fsencode(argument) for argument in arguments)
         argv = (ctypes.c_char_p * (len(encoded) + 1))()
         for index, argument in enumerate(encoded):
             argv[index] = argument

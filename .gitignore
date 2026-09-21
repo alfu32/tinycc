@@ -69,3 +69,4 @@ tests/hello
 tests/tests2/fred.txt
 libtcc.dylib
 .kode/
+# /cli-binding-starter/sysroots-bundle-2026.09.21.tar.zst

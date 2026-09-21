@@ -10,6 +10,8 @@ This is the working TinyCC baseline for the machinery that must be adapted:
   release workflow.
 - `scripts/` builds native payloads and assembles the portable launchers.
 - `bindings/` supplies the Java JNI facade, CLI facade, and Python package.
+- `sysroots-bundle-2026.09.21.tar.zst` supplies Linux musl and Windows
+  LLVM-MinGW headers, libraries, and CRT files.
 
 It is intentionally not an immediately runnable QuickJS package. The target
 repository's build system, library names, public C API, runtime assets, and
@@ -24,3 +26,6 @@ The desired QuickJS release result is only:
 Each contains payloads for Linux x86_64/aarch64, Windows x86_64/aarch64, and
 macOS x86_64/aarch64. The per-platform tar/zip files are CI-only handoff
 artifacts; they must not be uploaded as GitHub Release assets.
+
+The Linux and Windows payload scripts extract the matching sysroot into
+`tinycc/sysroot`; macOS intentionally uses the SDK supplied by the host.
