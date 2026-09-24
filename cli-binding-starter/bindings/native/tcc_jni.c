@@ -100,7 +100,8 @@ Java_org_tinycc_TinyCC_compileNative(
         result = -1;
         goto done;
     }
-    tcc_set_lib_path(state, runtime_directory_chars);
+    if (runtime_directory_chars[0])
+        tcc_set_lib_path(state, runtime_directory_chars);
     tcc_set_error_func(state, &context, report_diagnostic);
     result = 0;
     if (options_chars && options_chars[0])

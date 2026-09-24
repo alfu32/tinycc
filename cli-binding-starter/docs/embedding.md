@@ -40,16 +40,19 @@ a file performs relocation itself.
 The manual **native release bundles** workflow takes a required `release_name`
 input and publishes these extra GitHub Release assets:
 
-- `tinycc-cli.jar` is a complete `tcc` driver facade. Arguments are passed
-  verbatim to `main` exported by the bundled `tcc-driver` shared library, so
-  this works exactly as with `tcc`: `java -jar tinycc-cli.jar input.c -luuid
-  -o output`. No child `tcc` executable is spawned. The optional leading
-  `exe` is ignored and leading `dll` adds `-shared`. Add `--target` followed
-  by one of `linux-x86_64`, `linux-aarch64`, `windows-x86_64`,
-  `windows-aarch64`, `macos-x86_64`, or `macos-aarch64` to select the
-  cross-target driver, for example:
+- `tinycc-cli.jar` is a lightweight proxy that invokes the system `tcc`
+  executable from `PATH`; install TinyCC separately. TCC options are passed
+  through, with `exe`/`dll` compatibility shorthands and the `--launcher`
+  convenience option. For example: `java -jar tinycc-cli.jar input.c -luuid
+  -o output`.
+- `tinycc-cross-cli.jar` is the self-contained CLI. It calls the exported
+  `main` in its bundled driver through JNI and does not spawn `tcc`. The
+  optional leading `exe` is ignored and leading `dll` adds `-shared`. Add
+  `--target` followed by one of `linux-x86_64`, `linux-aarch64`,
+  `windows-x86_64`, `windows-aarch64`, `macos-x86_64`, or `macos-aarch64` to
+  select a cross-target driver, for example:
 
-      java -jar tinycc-cli.jar --target linux-aarch64 input.c -o output
+      java -jar tinycc-cross-cli.jar --target linux-aarch64 input.c -o output
 
   Linux and Windows target sysroots are selected from the matching native
   payload embedded in the JAR; an explicit `--sysroot` overrides that default.
@@ -58,17 +61,24 @@ input and publishes these extra GitHub Release assets:
   macOS SDKs are not bundled, so cross-compiling to macOS requires the SDK to
   be provisioned by the user (and supplied with `--sysroot` when the host
   compiler cannot discover it).
-- `tinycc-embed.jar` is the drop-in Java/Kotlin library. It bundles the JNI
-  bridge and all six native TinyCC payloads, selects the current host, extracts
-  it once, and exposes `TinyCC.compileExecutable()` and
-  `TinyCC.compileDynamicLibrary()`. Supply a `DiagnosticListener` to receive
-  errors and warnings as compilation happens.
+- `tinycc-embed.jar` is the system-backed Java/Kotlin library. It includes the
+  Java API and JNI bridge variants, but no TinyCC compiler libraries or
+  sysroots. It loads the host's system `libtcc` through the dynamic loader and
+  exposes `TinyCC.compileExecutable()` and `TinyCC.compileDynamicLibrary()`.
+  Install `libtcc` where both Java's native library search and the OS dynamic
+  loader can find it (or configure their search paths). Supply a
+  `DiagnosticListener` for live diagnostics.
+- `tinycc-cross-embed.jar` is the self-contained Java/Kotlin library. It
+  bundles the JNI bridge and all six native TinyCC payloads, selects the
+  current host, extracts it once, and exposes the same API without a separate
+  TinyCC installation.
 - Six host-specific CLI JARs (`tinycc-cli-<platform>.jar`) and six matching
   embed JARs (`tinycc-embed-<platform>.jar`) are also published. Each contains
   only the named host's native payload and bundled sysroot, if available
   (macOS SDKs remain user-provisioned); cross-target drivers and foreign
   sysroots are omitted. Use one when you only need a smaller same-host compiler
-  package. The existing multiarch JARs remain available for cross-compilation.
+  package. The `tinycc-cross-*` JARs remain available for bundled
+  cross-compilation.
   The Gradle task accepts `--target all` or one supported triple;
   `scripts/build-launchers.sh` supplies the staged native and output paths
   automatically.
@@ -93,10 +103,11 @@ generated launcher forwards its own arguments to `int main(int argc, char
 alias for `kotlin`. Use `-o path/to/library` to choose a different native
 library name. All remaining arguments are passed to TinyCC.
 
-The direct `TinyCC.compile*()` Java API and `Compiler.compile()` Python API use
-the host-target `libtcc` library so their synchronous diagnostic callbacks
-remain available. Use `executeTcc()` or the CLI facade with `--target` for
-cross-target executable or shared-library output.
+The direct `TinyCC.compile*()` Java API uses system `libtcc` in
+`tinycc-embed.jar` and bundled `libtcc` in `tinycc-cross-embed.jar`; synchronous
+diagnostic callbacks work in either. `TinyCC.executeTcc()` uses system `tcc`
+from `PATH` in the system-backed JAR. Use `tinycc-cross-cli.jar` with
+`--target` for bundled cross-target executable or shared-library output.
 
 Java and Kotlin launcher sources use `tinycc-embed.jar` to call the exported
 library entry point. Compile them with that JAR on the classpath; a Kotlin
@@ -107,10 +118,9 @@ symbols from Unix shared libraries, and the facade adds `-rdynamic` so that
 `main` is also exported from Windows DLLs. This mode requires the two-argument
 `main` signature; if `main` calls `exit()`, it exits the Python process too.
 
-The JAR and Python launcher deliberately carry all supported native targets;
-they do not need a Maven or PyPI repository. For a smaller application
-distribution, unpack the platform-specific native release archive and point
-the Python `Compiler` constructor at it instead.
+The JARs and Python launcher do not need a Maven or PyPI repository. The
+`tinycc-cross-*` JARs and `tinycc.pyz` carry the supported native targets; the
+system-backed JARs require a system TinyCC installation.
 
 Java and Kotlin use the same JNI API:
 

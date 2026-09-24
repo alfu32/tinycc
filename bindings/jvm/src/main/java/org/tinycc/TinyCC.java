@@ -10,11 +10,12 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Self-contained JNI access to the libtcc compiler.
+ * JNI access to the libtcc compiler.
  *
- * <p>The supplied embed JAR includes native libraries for the six supported
- * host triples. Native files are extracted once per class loader to a private
- * temporary directory before being loaded.</p>
+ * <p>The system embed JAR includes JNI bridges for all supported hosts and
+ * loads the host's installed libtcc. The cross embed JAR also bundles the
+ * compiler libraries and runtime files. Native resources are extracted once
+ * per class loader to a private temporary directory.</p>
  */
 public final class TinyCC {
     private static final Map<String, CrossTarget> CROSS_TARGETS = Map.ofEntries(
@@ -83,11 +84,11 @@ public final class TinyCC {
         return compile(source, OutputType.DYNAMIC_LIBRARY, outputPath, diagnostics);
     }
 
-    /**
-     * Runs the bundled TCC driver through its exported {@code main} function.
-     * No child executable is spawned; the driver DLL/SO is loaded with JNI.
-     */
+    /** Runs TCC's command line using its bundled driver, or system {@code tcc} in system-only JARs. */
     public static int executeTcc(String... arguments) {
+        if (NATIVE_BUNDLE.driver() == null) {
+            return executeSystemTcc(arguments);
+        }
         List<String> tccArguments = new java.util.ArrayList<>();
         CrossTarget selectedTarget = null;
         for (int index = 0; index < arguments.length; index++) {
@@ -135,8 +136,8 @@ public final class TinyCC {
                         .resolve(selectedTarget.platform()).resolve("tcc-driver" + nativeLibrarySuffix());
                 if (!Files.isRegularFile(driver)) {
                     throw new IllegalArgumentException("cross target '" + selectedTarget.platform()
-                            + "' is not bundled in this host-specific JAR; use tinycc-cli.jar or "
-                            + "tinycc-embed.jar for all cross targets");
+                            + "' is not bundled in this host-specific JAR; use tinycc-cross-cli.jar or "
+                            + "tinycc-cross-embed.jar for all cross targets");
                 }
                 runtimeDirectory = driver.getParent();
                 sysroot = hasSysroot ? null : targetSysroot(selectedTarget.platform());
@@ -169,6 +170,21 @@ public final class TinyCC {
         return runLibraryMain(driver, driverArguments);
     }
 
+    private static int executeSystemTcc(String[] arguments) {
+        List<String> command = new java.util.ArrayList<>(arguments.length + 1);
+        command.add("tcc");
+        command.addAll(List.of(arguments));
+        try {
+            return new ProcessBuilder(command).inheritIO().start().waitFor();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return 130;
+        } catch (IOException exception) {
+            throw new IllegalStateException("could not start system TinyCC executable 'tcc': "
+                    + exception.getMessage(), exception);
+        }
+    }
+
     /**
      * Invokes {@code int main(int argc, char **argv)} exported by a shared
      * library. The library path is provided as {@code argv[0]}.
@@ -193,7 +209,7 @@ public final class TinyCC {
         String prefix = "native/" + target + "/";
         if (TinyCC.class.getClassLoader().getResource(prefix + "files.list") == null) {
             throw new IllegalStateException("this TinyCC JAR does not include native payload for host " + target
-                    + "; use tinycc-embed.jar or tinycc-cli.jar for all hosts");
+                    + "; use tinycc-cross-embed.jar for the bundled compiler on all hosts");
         }
         Path extractionDirectory;
         try {
@@ -220,14 +236,25 @@ public final class TinyCC {
                     ? extractionDirectory.resolve("tinycc/bin")
                     : extractionDirectory.resolve("tinycc/lib");
             String suffix = windows ? ".dll" : target.startsWith("macos-") ? ".dylib" : ".so";
-            System.load(nativeDirectory.resolve("libtcc" + suffix).toString());
+            Path bundledTcc = nativeDirectory.resolve("libtcc" + suffix);
+            boolean hasBundledTcc = Files.isRegularFile(bundledTcc);
+            if (hasBundledTcc) {
+                System.load(bundledTcc.toString());
+            } else {
+                try {
+                    System.loadLibrary(windows ? "libtcc" : "tcc");
+                } catch (UnsatisfiedLinkError exception) {
+                    throw new UnsatisfiedLinkError("system-backed tinycc-embed.jar requires system libtcc "
+                            + "to be available to the dynamic loader: " + exception.getMessage());
+                }
+            }
             System.load(nativeDirectory.resolve("libtinycc_jni" + suffix).toString());
             Path bundledSysroot = extractionDirectory.resolve("tinycc/sysroot");
             return new NativeBundle(
                     extractionDirectory, nativeDirectory,
-                    windows ? nativeDirectory : nativeDirectory.resolve("tcc"),
-                    nativeDirectory.resolve("tcc-driver" + suffix),
-                    Files.isDirectory(bundledSysroot) ? bundledSysroot : null,
+                    hasBundledTcc ? windows ? nativeDirectory : nativeDirectory.resolve("tcc") : Path.of(""),
+                    hasBundledTcc ? nativeDirectory.resolve("tcc-driver" + suffix) : null,
+                    hasBundledTcc && Files.isDirectory(bundledSysroot) ? bundledSysroot : null,
                     windows);
         } catch (IOException exception) {
             throw new IllegalStateException("could not unpack TinyCC native bundle for " + target, exception);

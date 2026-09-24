@@ -68,10 +68,15 @@ class PackageLaunchers extends DefaultTask {
             throw new GradleException("unsupported --target '${invalidTargets.first()}'; expected all or ${PLATFORMS.join(', ')}")
         }
 
-        File fullEmbedJar = new File(jarOutputDirectory, 'tinycc-embed.jar')
-        File fullCliJar = new File(jarOutputDirectory, 'tinycc-cli.jar')
-        writeJar(fullEmbedJar, classesDirectory, fullNativeEntries(), null)
-        writeJar(fullCliJar, classesDirectory, fullNativeEntries(), 'org.tinycc.cli.Main')
+        Map<String, Object> allNativeEntries = fullNativeEntries()
+        writeJar(new File(jarOutputDirectory, 'tinycc-cross-embed.jar'),
+            classesDirectory, allNativeEntries, null)
+        writeJar(new File(jarOutputDirectory, 'tinycc-cross-cli.jar'),
+            classesDirectory, allNativeEntries, 'org.tinycc.cli.Main')
+        writeJar(new File(jarOutputDirectory, 'tinycc-embed.jar'),
+            classesDirectory, systemNativeEntries(), null)
+        writeJar(new File(jarOutputDirectory, 'tinycc-cli.jar'),
+            classesDirectory, [:], 'org.tinycc.cli.SystemMain')
 
         for (String platform : selectedPlatforms) {
             Map<String, Object> nativeEntries = thinNativeEntries(platform)
@@ -85,6 +90,22 @@ class PackageLaunchers extends DefaultTask {
     private Map<String, Object> fullNativeEntries() {
         Map<String, Object> entries = new TreeMap<>()
         addFiles(entries, nativeRoot, 'native/')
+        entries
+    }
+
+    private Map<String, Object> systemNativeEntries() {
+        Map<String, Object> entries = new TreeMap<>()
+        for (String platform : PLATFORMS) {
+            boolean windows = platform.startsWith('windows-')
+            String suffix = windows ? '.dll' : platform.startsWith('macos-') ? '.dylib' : '.so'
+            String relative = "tinycc/${windows ? 'bin' : 'lib'}/libtinycc_jni${suffix}"
+            File bridge = new File(new File(nativeRoot, platform), relative)
+            if (!bridge.isFile()) {
+                throw new GradleException("JNI bridge is missing for ${platform}: ${bridge}")
+            }
+            entries["native/${platform}/${relative}"] = bridge
+            entries["native/${platform}/files.list"] = (relative + '\n').getBytes('UTF-8')
+        }
         entries
     }
 
