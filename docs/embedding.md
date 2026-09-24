@@ -75,6 +75,10 @@ input and publishes these extra GitHub Release assets:
   macOS SDKs are not bundled, so cross-compiling to macOS requires the SDK to
   be provisioned by the user (and supplied with `--sysroot` when the host
   compiler cannot discover it).
+- `tinycc-cross-cli-no-sysroots.jar` bundles the same six native hosts and
+  cross-target drivers, but omits every bundled sysroot. Use this when the
+  target headers, libraries, and CRT files are supplied by the environment or
+  explicitly through TinyCC options such as `--sysroot`, `-I`, and `-L`.
 - `tinycc-embed.jar` is the system-backed Java/Kotlin library. It includes the
   Java API and JNI bridge variants, but no TinyCC compiler libraries or
   sysroots. It loads the host's system `libtcc` through the dynamic loader and

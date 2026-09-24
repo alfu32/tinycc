@@ -73,6 +73,8 @@ class PackageLaunchers extends DefaultTask {
             classesDirectory, allNativeEntries, null)
         writeJar(new File(jarOutputDirectory, 'tinycc-cross-cli.jar'),
             classesDirectory, allNativeEntries, 'org.tinycc.cli.Main')
+        writeJar(new File(jarOutputDirectory, 'tinycc-cross-cli-no-sysroots.jar'),
+            classesDirectory, nativeEntriesWithoutSysroots(), 'org.tinycc.cli.Main')
         writeJar(new File(jarOutputDirectory, 'tinycc-embed.jar'),
             classesDirectory, systemNativeEntries(), null)
         writeJar(new File(jarOutputDirectory, 'tinycc-cli.jar'),
@@ -90,6 +92,32 @@ class PackageLaunchers extends DefaultTask {
     private Map<String, Object> fullNativeEntries() {
         Map<String, Object> entries = new TreeMap<>()
         addFiles(entries, nativeRoot, 'native/')
+        entries
+    }
+
+    private Map<String, Object> nativeEntriesWithoutSysroots() {
+        Map<String, Object> entries = new TreeMap<>()
+        for (String platform : PLATFORMS) {
+            File platformRoot = new File(nativeRoot, platform)
+            if (!platformRoot.isDirectory()) {
+                throw new GradleException("native payload is missing for ${platform}: ${platformRoot}")
+            }
+
+            List<String> files = []
+            Files.walk(platformRoot.toPath()).withCloseable { stream ->
+                stream.filter { Files.isRegularFile(it) }.forEach { path ->
+                    String relative = platformRoot.toPath().relativize(path).toString().replace('\\', '/')
+                    if (relative == 'files.list' || relative == 'tinycc/sysroot'
+                            || relative.startsWith('tinycc/sysroot/')) {
+                        return
+                    }
+                    files.add(relative)
+                    entries["native/${platform}/${relative}"] = path.toFile()
+                }
+            }
+            files.sort()
+            entries["native/${platform}/files.list"] = (files.join('\n') + '\n').getBytes('UTF-8')
+        }
         entries
     }
 

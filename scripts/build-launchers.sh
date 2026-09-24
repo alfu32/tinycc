@@ -83,6 +83,11 @@ gradle -p bindings/jvm packageLaunchers --target all \
     -PjarOutputDirectory="$work_directory/jars" \
     --no-daemon
 cp "$work_directory/jars/"*.jar "$output_directory/"
+test -f "$output_directory/tinycc-cross-cli-no-sysroots.jar"
+if jar tf "$output_directory/tinycc-cross-cli-no-sysroots.jar" | grep -E '(^|/)tinycc/sysroot(/|$)' >/dev/null; then
+    echo "sysroot content unexpectedly present in tinycc-cross-cli-no-sysroots.jar" >&2
+    exit 2
+fi
 
 python_root="$work_directory/python"
 mkdir -p "$python_root"
