@@ -7,6 +7,9 @@
 #ifndef _INC_UCHAR
 #define _INC_UCHAR
 
+#include <stddef.h>
+#include <wchar.h>
+
 /*
  * The following defines are only valid when C11 (-std=c11) is used.
  *
@@ -29,5 +32,11 @@
 
 typedef unsigned short char16_t;
 typedef unsigned int char32_t;
+
+/* The bundled Windows UCRT provides the C11 UTF conversion functions. */
+size_t __cdecl mbrtoc16(char16_t *, const char *, size_t, mbstate_t *);
+size_t __cdecl c16rtomb(char *, char16_t, mbstate_t *);
+size_t __cdecl mbrtoc32(char32_t *, const char *, size_t, mbstate_t *);
+size_t __cdecl c32rtomb(char *, char32_t, mbstate_t *);
 #endif /* __STDC_VERSION__ >= 201112L */
 #endif /* _INC_UCHAR */

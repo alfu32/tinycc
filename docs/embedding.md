@@ -12,6 +12,16 @@ default and pass it to TCC for system headers, libraries, and CRT objects.
 User-supplied `--sysroot`, `-I`, and `-L` options remain available. macOS does
 not ship an SDK in this bundle and uses the host-provided system SDK.
 
+The native release workflow also prepares Raylib 6.0 once per target ABI:
+musl builds for Linux x86-64/AArch64, UCRT LLVM-MinGW builds for Windows
+x86-64/AArch64, and one universal macOS library. Linux and Windows Raylib
+headers and libraries are installed into their bundled sysroots. On macOS,
+they live in the compiler's private include/library paths so the host SDK
+remains available. Link with `-lraylib`; Linux desktop builds also need
+`-lGL -lX11 -lXrandr -lXinerama -lXi -lXcursor -lpthread -ldl -lrt`. macOS
+apps use the required Apple frameworks, including Foundation, AppKit, IOKit,
+OpenGL, and CoreVideo.
+
 For a relocatable application, find that private tree at runtime and pass it
 to every compiler state with `tcc_set_lib_path()`. In Linux and Windows
 bundles, also pass the extracted `sysroot/` to `tcc_set_sysroot()`; the Java

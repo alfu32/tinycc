@@ -146,10 +146,10 @@ def smoke_windows_imports(
     result = call_driver(
         driver_path,
         [
-            "-B", str(target_directory), "-L", str(target_directory),
+            "-std=c11", "-B", str(target_directory), "-L", str(target_directory),
             "-L", str(target_directory / "lib"),
             "--sysroot", str(sysroot), str(source_root / "scripts" / "cross-import-smoke.c"),
-            "-lbcrypt", "-lmsvcrt", "-o", str(output),
+            "-lbcrypt", "-lucrt", "-lmsvcrt", "-o", str(output),
         ],
     )
     try:

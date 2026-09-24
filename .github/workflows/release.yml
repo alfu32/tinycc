@@ -13,7 +13,36 @@ permissions:
   contents: read
 
 jobs:
+  raylib:
+    name: Prepare Raylib ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-22.04
+          - target: linux-aarch64
+            runner: ubuntu-22.04-arm
+          - target: windows-x86_64
+            runner: ubuntu-22.04
+          - target: windows-aarch64
+            runner: ubuntu-22.04
+          - target: macos-universal
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build or fetch target Raylib payload
+        run: bash scripts/prepare-raylib.sh "${{ matrix.target }}" release/raylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raylib-${{ matrix.target }}
+          path: release/raylib/
+          if-no-files-found: error
+
   unix:
+    needs: raylib
     name: ${{ matrix.id }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
@@ -31,11 +60,18 @@ jobs:
             runner: macos-15
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: raylib-*
+          path: release/raylib
+          merge-multiple: true
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
       - name: Build and test bundle
+        env:
+          RAYLIB_BUNDLE: ${{ github.workspace }}/release/raylib
         run: bash scripts/package-unix.sh "${{ matrix.id }}" "dist/tinycc-${{ matrix.id }}.tar.gz"
       - uses: actions/upload-artifact@v4
         with:
@@ -44,6 +80,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    needs: raylib
     name: ${{ matrix.id }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
@@ -61,6 +98,11 @@ jobs:
             tcc_arch: arm64
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: raylib-*
+          path: release/raylib
+          merge-multiple: true
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -70,6 +112,8 @@ jobs:
           python-version: '3.12'
       - name: Set up MSVC and build bundle
         shell: cmd
+        env:
+          RAYLIB_BUNDLE: ${{ github.workspace }}\release\raylib
         run: |
           for /f "delims=" %%i in ('vswhere.exe -latest -property installationPath') do call "%%i\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.vc_arch }}
           call scripts\package-windows.cmd ${{ matrix.tcc_arch }} dist\tinycc-${{ matrix.id }}.zip

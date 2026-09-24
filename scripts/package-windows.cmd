@@ -12,6 +12,7 @@ set "TARGET=%~1"
 set "ARCHIVE=%~f2"
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
 set "SYSROOT_BUNDLE=%ROOT%\sysroots-bundle-2026.09.21.tar.zst"
+set "RAYLIB_BUNDLE=%RAYLIB_BUNDLE%"
 set "SYSROOT_ARCH=%TARGET%"
 if "%TARGET%"=="arm64" set "SYSROOT_ARCH=aarch64"
 set "PAYLOAD=%ROOT%\.release\%TARGET%\tinycc"
@@ -82,6 +83,17 @@ mkdir "%PAYLOAD%\sysroot"
 xcopy /e /i /q /y "%SYSROOT_STAGE%\sysroots-bundle-2026.09.21\sysroots\windows\%SYSROOT_ARCH%\" "%PAYLOAD%\sysroot\" >nul
 copy /y "%SYSROOT_STAGE%\sysroots-bundle-2026.09.21\MANIFEST.json" "%PAYLOAD%\sysroot\MANIFEST.json" >nul
 if not exist "%PAYLOAD%\sysroot\include" exit /b 1
+if not "%RAYLIB_BUNDLE%"=="" (
+  if not exist "%RAYLIB_BUNDLE%\windows\%SYSROOT_ARCH%\lib\libraylib.a" (
+    echo Missing Raylib library for %SYSROOT_ARCH%
+    exit /b 2
+  )
+  if not exist "%PAYLOAD%\sysroot\include" mkdir "%PAYLOAD%\sysroot\include"
+  if not exist "%PAYLOAD%\sysroot\lib" mkdir "%PAYLOAD%\sysroot\lib"
+  xcopy /e /i /q /y "%RAYLIB_BUNDLE%\windows\%SYSROOT_ARCH%\include" "%PAYLOAD%\sysroot\include" >nul
+  xcopy /e /i /q /y "%RAYLIB_BUNDLE%\windows\%SYSROOT_ARCH%\lib" "%PAYLOAD%\sysroot\lib" >nul
+  if errorlevel 1 exit /b 1
+)
 copy /y "%ROOT%\win32\tcc.exe" "%PAYLOAD%\bin\tcc.exe" >nul
 copy /y "%ROOT%\win32\libtcc.dll" "%PAYLOAD%\bin\libtcc.dll" >nul
 copy /y "%ROOT%\win32\tcc-driver.dll" "%PAYLOAD%\bin\tcc-driver.dll" >nul

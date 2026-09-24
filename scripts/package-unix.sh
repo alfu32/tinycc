@@ -10,6 +10,7 @@ source_root=$(pwd)
 release_root="$source_root/.release/$platform_id"
 payload_root="$release_root/tinycc"
 sysroot_bundle="${SYSROOT_BUNDLE:-$source_root/sysroots-bundle-2026.09.21.tar.zst}"
+raylib_bundle="${RAYLIB_BUNDLE:-}"
 cross_sysroots_root=
 
 case "$(uname -s)" in
@@ -35,6 +36,18 @@ if [[ "$(uname -s)" == Linux ]]; then
   for overlay_arch in x86_64 aarch64; do
     cp scripts/sysroot-overlays/windows/include/mm_malloc.h \
       "$cross_sysroots_root/windows/$overlay_arch/include/mm_malloc.h"
+    if [[ -n "$raylib_bundle" ]]; then
+      raylib_target="$raylib_bundle/linux/$overlay_arch"
+      test -f "$raylib_target/lib/libraylib.a" || {
+        echo "missing Raylib library for linux/$overlay_arch: $raylib_target" >&2
+        exit 2
+      }
+      linux_sysroot="$cross_sysroots_root/linux/$overlay_arch"
+      mkdir -p "$linux_sysroot/usr/include" "$linux_sysroot/usr/lib"
+      cp -a "$raylib_target/include/." "$linux_sysroot/usr/include/"
+      cp -a "$raylib_target/lib/." "$linux_sysroot/usr/lib/"
+      cp -a "$raylib_target/sysroot/usr/lib/." "$linux_sysroot/usr/lib/"
+    fi
   done
   sysroot_source="$cross_sysroots_root/linux/$sysroot_arch"
   test -d "$sysroot_source/usr/include" || {
@@ -65,6 +78,19 @@ make distclean
 ./configure "${release_configure_options[@]}" --enable-cross
 make -j2
 make DESTDIR="$release_root" install
+
+# macOS uses the system-provided SDK, so keep Raylib in the compiler's private
+# include/library search roots instead of creating a partial --sysroot.
+if [[ "$(uname -s)" == Darwin && -n "$raylib_bundle" ]]; then
+  raylib_target="$raylib_bundle/macos/universal"
+  test -f "$raylib_target/lib/libraylib.a" || {
+    echo "missing universal macOS Raylib payload: $raylib_target" >&2
+    exit 2
+  }
+  mkdir -p "$payload_root/lib/tcc/include" "$payload_root/lib/tcc/lib"
+  cp -a "$raylib_target/include/." "$payload_root/lib/tcc/include/"
+  cp -a "$raylib_target/lib/." "$payload_root/lib/tcc/lib/"
+fi
 
 mv "$payload_root/bin/tcc" "$payload_root/bin/tcc-bin"
 cp scripts/tcc-launcher.sh "$payload_root/bin/tcc"
