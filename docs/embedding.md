@@ -63,6 +63,15 @@ input and publishes these extra GitHub Release assets:
   it once, and exposes `TinyCC.compileExecutable()` and
   `TinyCC.compileDynamicLibrary()`. Supply a `DiagnosticListener` to receive
   errors and warnings as compilation happens.
+- Six host-specific CLI JARs (`tinycc-cli-<platform>.jar`) and six matching
+  embed JARs (`tinycc-embed-<platform>.jar`) are also published. Each contains
+  only the named host's native payload and bundled sysroot, if available
+  (macOS SDKs remain user-provisioned); cross-target drivers and foreign
+  sysroots are omitted. Use one when you only need a smaller same-host compiler
+  package. The existing multiarch JARs remain available for cross-compilation.
+  The Gradle task accepts `--target all` or one supported triple;
+  `scripts/build-launchers.sh` supplies the staged native and output paths
+  automatically.
 - `tinycc.pyz` is runnable with `python3 tinycc.pyz exe input.c output` (or
   `dll`). It accepts the complete native TCC command line too, for example
   `python3 tinycc.pyz input.c -luuid -o output`, by calling the exported

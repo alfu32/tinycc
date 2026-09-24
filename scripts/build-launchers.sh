@@ -41,7 +41,8 @@ for archive in "${archives[@]}"; do
             ;;
         windows-*)
             test -d "$destination/tinycc/sysroot/include" \
-                && test -d "$destination/tinycc/sysroot/lib" || {
+                && test -d "$destination/tinycc/sysroot/lib" \
+                && test -f "$destination/tinycc/sysroot/include/mm_malloc.h" || {
                 echo "missing bundled Windows sysroot in $filename" >&2
                 exit 2
             }
@@ -77,16 +78,11 @@ for archive in "${archives[@]}"; do
     done
 done
 
-classes="$work_directory/classes"
-resources="$work_directory/resources"
-mkdir -p "$classes" "$resources/native"
-find bindings/jvm/src/main/java -name '*.java' -print0 | xargs -0 javac -d "$classes"
-cp -R "$work_directory/native/." "$resources/native/"
-
-jar --create --file "$output_directory/tinycc-embed.jar" \
-    -C "$classes" . -C "$resources" .
-jar --create --file "$output_directory/tinycc-cli.jar" \
-    --main-class org.tinycc.cli.Main -C "$classes" . -C "$resources" .
+gradle -p bindings/jvm packageLaunchers --target all \
+    -PnativeRoot="$work_directory/native" \
+    -PjarOutputDirectory="$work_directory/jars" \
+    --no-daemon
+cp "$work_directory/jars/"*.jar "$output_directory/"
 
 python_root="$work_directory/python"
 mkdir -p "$python_root"

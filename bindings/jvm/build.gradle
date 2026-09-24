@@ -1,0 +1,163 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+import org.gradle.api.tasks.options.Option
+
+import java.nio.file.Files
+import java.util.jar.Attributes
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
+import java.util.jar.Manifest
+
+plugins {
+    id 'java'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+class PackageLaunchers extends DefaultTask {
+    private static final List<String> PLATFORMS = [
+        'linux-x86_64', 'linux-aarch64', 'windows-x86_64',
+        'windows-aarch64', 'macos-x86_64', 'macos-aarch64'
+    ]
+
+    @InputDirectory
+    @PathSensitive(PathSensitivity.RELATIVE)
+    File nativeRoot
+
+    @OutputDirectory
+    File jarOutputDirectory
+
+    private String targetSelection = 'all'
+
+    @Input
+    String getTargetSelection() {
+        targetSelection
+    }
+
+    @Option(option = 'target', description = 'Thin JAR host target to package, or all')
+    void setTargetSelection(String value) {
+        targetSelection = value
+    }
+
+    @TaskAction
+    void packageLaunchers() {
+        if (!nativeRoot?.isDirectory()) {
+            throw new GradleException("nativeRoot must be an existing directory: ${nativeRoot}")
+        }
+        if (!jarOutputDirectory.exists() && !jarOutputDirectory.mkdirs()) {
+            throw new GradleException("could not create JAR output directory: ${jarOutputDirectory}")
+        }
+        File classesDirectory = project.layout.buildDirectory.dir('classes/java/main').get().asFile
+        if (!classesDirectory.isDirectory()) {
+            throw new GradleException("compiled Java classes are missing: ${classesDirectory}")
+        }
+
+        List<String> selectedPlatforms = targetSelection == 'all'
+            ? PLATFORMS
+            : [targetSelection]
+        List<String> invalidTargets = selectedPlatforms.findAll { !PLATFORMS.contains(it) }
+        if (!invalidTargets.isEmpty()) {
+            throw new GradleException("unsupported --target '${invalidTargets.first()}'; expected all or ${PLATFORMS.join(', ')}")
+        }
+
+        File fullEmbedJar = new File(jarOutputDirectory, 'tinycc-embed.jar')
+        File fullCliJar = new File(jarOutputDirectory, 'tinycc-cli.jar')
+        writeJar(fullEmbedJar, classesDirectory, fullNativeEntries(), null)
+        writeJar(fullCliJar, classesDirectory, fullNativeEntries(), 'org.tinycc.cli.Main')
+
+        for (String platform : selectedPlatforms) {
+            Map<String, Object> nativeEntries = thinNativeEntries(platform)
+            writeJar(new File(jarOutputDirectory, "tinycc-embed-${platform}.jar"),
+                classesDirectory, nativeEntries, null)
+            writeJar(new File(jarOutputDirectory, "tinycc-cli-${platform}.jar"),
+                classesDirectory, nativeEntries, 'org.tinycc.cli.Main')
+        }
+    }
+
+    private Map<String, Object> fullNativeEntries() {
+        Map<String, Object> entries = new TreeMap<>()
+        addFiles(entries, nativeRoot, 'native/')
+        entries
+    }
+
+    private Map<String, Object> thinNativeEntries(String platform) {
+        File platformRoot = new File(nativeRoot, platform)
+        if (!platformRoot.isDirectory()) {
+            throw new GradleException("native payload is missing for ${platform}: ${platformRoot}")
+        }
+
+        Map<String, Object> entries = new TreeMap<>()
+        List<String> files = []
+        Files.walk(platformRoot.toPath()).withCloseable { stream ->
+            stream.filter { Files.isRegularFile(it) }.forEach { path ->
+                String relative = platformRoot.toPath().relativize(path).toString().replace('\\', '/')
+                if (relative == 'files.list'
+                        || relative.startsWith('tinycc/bin/cross/')
+                        || relative.startsWith('tinycc/lib/cross/')) {
+                    return
+                }
+                files.add(relative)
+                entries["native/${platform}/${relative}"] = path.toFile()
+            }
+        }
+        if (files.isEmpty()) {
+            throw new GradleException("native payload contains no files for ${platform}")
+        }
+        files.sort()
+        entries["native/${platform}/files.list"] = (files.join('\n') + '\n').getBytes('UTF-8')
+        entries
+    }
+
+    private static void addFiles(Map<String, Object> entries, File root, String prefix) {
+        Files.walk(root.toPath()).withCloseable { stream ->
+            stream.filter { Files.isRegularFile(it) }.forEach { path ->
+                String relative = root.toPath().relativize(path).toString().replace('\\', '/')
+                entries[prefix + relative] = path.toFile()
+            }
+        }
+    }
+
+    private void writeJar(File jarFile, File classesDirectory,
+            Map<String, Object> nativeEntries, String mainClass) {
+        Map<String, Object> entries = new TreeMap<>()
+        addFiles(entries, classesDirectory, '')
+        entries.putAll(nativeEntries)
+
+        Manifest manifest = new Manifest()
+        manifest.mainAttributes.put(Attributes.Name.MANIFEST_VERSION, '1.0')
+        if (mainClass != null) {
+            manifest.mainAttributes.put(Attributes.Name.MAIN_CLASS, mainClass)
+        }
+        jarFile.parentFile.mkdirs()
+        new JarOutputStream(new FileOutputStream(jarFile), manifest).withCloseable { output ->
+            entries.each { String name, Object value ->
+                JarEntry entry = new JarEntry(name)
+                entry.time = 0L
+                output.putNextEntry(entry)
+                if (value instanceof byte[]) {
+                    output.write((byte[]) value)
+                } else {
+                    ((File) value).withInputStream { input -> input.transferTo(output) }
+                }
+                output.closeEntry()
+            }
+        }
+        logger.lifecycle("Created ${jarFile.name}")
+    }
+}
+
+tasks.register('packageLaunchers', PackageLaunchers) {
+    dependsOn tasks.named('classes')
+    nativeRoot = providers.gradleProperty('nativeRoot').getOrElse('')
+        ? new File(providers.gradleProperty('nativeRoot').get()) : null
+    jarOutputDirectory = providers.gradleProperty('jarOutputDirectory').getOrElse('')
+        ? new File(providers.gradleProperty('jarOutputDirectory').get()) : null
+}

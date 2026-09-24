@@ -32,6 +32,10 @@ set "SYSROOT_STAGE=%ROOT%\.release\%TARGET%\sysroot-stage"
 mkdir "%SYSROOT_STAGE%"
 tar --zstd -xf "%SYSROOT_BUNDLE%" -C "%SYSROOT_STAGE%"
 if errorlevel 1 exit /b 1
+copy /y "%ROOT%\scripts\sysroot-overlays\windows\include\mm_malloc.h" "%SYSROOT_STAGE%\sysroots-bundle-2026.09.21\sysroots\windows\x86_64\include\mm_malloc.h" >nul
+if errorlevel 1 exit /b 1
+copy /y "%ROOT%\scripts\sysroot-overlays\windows\include\mm_malloc.h" "%SYSROOT_STAGE%\sysroots-bundle-2026.09.21\sysroots\windows\aarch64\include\mm_malloc.h" >nul
+if errorlevel 1 exit /b 1
 pushd "%ROOT%\win32" || exit /b 1
 call build-tcc.bat -c cl -t %TARGET%
 if errorlevel 1 (

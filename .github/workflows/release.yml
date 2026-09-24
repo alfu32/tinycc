@@ -91,6 +91,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: 'current'
       - uses: actions/download-artifact@v4
         with:
           path: release/native

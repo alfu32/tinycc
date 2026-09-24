@@ -32,6 +32,10 @@ if [[ "$(uname -s)" == Linux ]]; then
   trap 'rm -rf "$sysroot_stage"' EXIT
   tar --zstd -xf "$sysroot_bundle" -C "$sysroot_stage"
   cross_sysroots_root="$sysroot_stage/sysroots-bundle-2026.09.21/sysroots"
+  for overlay_arch in x86_64 aarch64; do
+    cp scripts/sysroot-overlays/windows/include/mm_malloc.h \
+      "$cross_sysroots_root/windows/$overlay_arch/include/mm_malloc.h"
+  done
   sysroot_source="$cross_sysroots_root/linux/$sysroot_arch"
   test -d "$sysroot_source/usr/include" || {
     echo "sysroot has no headers for $platform_id" >&2

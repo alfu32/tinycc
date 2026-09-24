@@ -128,10 +128,19 @@ public final class TinyCC {
         Path runtimeDirectory = RUNTIME_DIRECTORY;
         Path sysroot = hasSysroot ? null : NATIVE_BUNDLE.sysroot();
         if (selectedTarget != null) {
-            driver = NATIVE_BUNDLE.nativeDirectory().resolve("cross")
-                    .resolve(selectedTarget.platform()).resolve("tcc-driver" + nativeLibrarySuffix());
-            runtimeDirectory = driver.getParent();
-            sysroot = hasSysroot ? null : targetSysroot(selectedTarget.platform());
+            if (selectedTarget.platform().equals(target())) {
+                sysroot = hasSysroot ? null : NATIVE_BUNDLE.sysroot();
+            } else {
+                driver = NATIVE_BUNDLE.nativeDirectory().resolve("cross")
+                        .resolve(selectedTarget.platform()).resolve("tcc-driver" + nativeLibrarySuffix());
+                if (!Files.isRegularFile(driver)) {
+                    throw new IllegalArgumentException("cross target '" + selectedTarget.platform()
+                            + "' is not bundled in this host-specific JAR; use tinycc-cli.jar or "
+                            + "tinycc-embed.jar for all cross targets");
+                }
+                runtimeDirectory = driver.getParent();
+                sysroot = hasSysroot ? null : targetSysroot(selectedTarget.platform());
+            }
         }
         boolean bundledWindowsLibraries = selectedTarget != null
                 && selectedTarget.platform().startsWith("windows-") && !hasSysroot;
@@ -182,6 +191,10 @@ public final class TinyCC {
     private static NativeBundle loadNativeBundle() {
         String target = target();
         String prefix = "native/" + target + "/";
+        if (TinyCC.class.getClassLoader().getResource(prefix + "files.list") == null) {
+            throw new IllegalStateException("this TinyCC JAR does not include native payload for host " + target
+                    + "; use tinycc-embed.jar or tinycc-cli.jar for all hosts");
+        }
         Path extractionDirectory;
         try {
             extractionDirectory = Files.createTempDirectory("tinycc-" + target + "-");
