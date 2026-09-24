@@ -1852,6 +1852,7 @@ ST_FUNC int pe_load_import_obj(TCCState *s1, int fd, unsigned offset,
         int section_number, storage_class, auxiliary_count;
         if (!read_mem(fd, symbol_file_offset, record, sizeof record))
             goto done;
+        auxiliary_count = record[17];
         memcpy(name_field, record, sizeof name_field);
         if (0 == read32le(name_field)) {
             unsigned name_offset = read32le(name_field + 4);
@@ -1871,7 +1872,6 @@ ST_FUNC int pe_load_import_obj(TCCState *s1, int fd, unsigned offset,
         }
         section_number = (short)read16le(record + 12);
         storage_class = record[16];
-        auxiliary_count = record[17];
         if (storage_class == 2 && section_number > 0
             && pe_add_archive_import(s1, dllname, symbol, wanted)) {
             if (wanted)

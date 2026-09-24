@@ -46,12 +46,20 @@ fi
 # Build the command-line compiler against static libtcc.  That makes the
 # executable itself relocatable; the launcher below supplies its runtime tree.
 configure_options=(--prefix=/tinycc)
+release_configure_options=("${configure_options[@]}")
 if [[ "$(uname -s)" == Linux ]]; then
-  configure_options+=(--config-musl)
+  release_configure_options+=(--config-musl)
 fi
-./configure "${configure_options[@]}" --enable-cross
+./configure "${configure_options[@]}"
 make -j2
 make test -k
+
+# Test with the host libc/interpreter: the release configuration selects musl
+# on Linux, whose loader may not be installed on the build runner.  Also keep
+# cross targets out of the test build; tests create and execute native helpers.
+make distclean
+./configure "${release_configure_options[@]}" --enable-cross
+make -j2
 make DESTDIR="$release_root" install
 
 mv "$payload_root/bin/tcc" "$payload_root/bin/tcc-bin"
@@ -91,7 +99,7 @@ python3 scripts/build-cross-bundles.py "${cross_bundle_args[@]}"
 # libtcc's objects need a separate PIC build for the shared library.  Keep the
 # already-installed static archive and runtime tree from the first build.
 make distclean
-./configure "${configure_options[@]}" --disable-static
+./configure "${release_configure_options[@]}" --disable-static
 make -j2 "$shared_name"
 cp "$shared_name" "$payload_root/lib/$shared_name"
 
