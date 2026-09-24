@@ -20,7 +20,11 @@ they live in the compiler's private include/library paths so the host SDK
 remains available. Link with `-lraylib`; Linux desktop builds also need
 `-lGL -lX11 -lXrandr -lXinerama -lXi -lXcursor -lpthread -ldl -lrt`. macOS
 apps use the required Apple frameworks, including Foundation, AppKit, IOKit,
-OpenGL, and CoreVideo.
+OpenGL, and CoreVideo. The release also publishes standalone
+`raylib-linux-x86_64.tar.gz`, `raylib-linux-aarch64.tar.gz`,
+`raylib-windows-x86_64.tar.gz`, `raylib-windows-aarch64.tar.gz`, and
+`raylib-macos-universal.tar.gz` assets; the universal macOS payload serves
+both Apple architectures.
 
 For a relocatable application, find that private tree at runtime and pass it
 to every compiler state with `tcc_set_lib_path()`. In Linux and Windows
