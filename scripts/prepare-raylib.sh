@@ -19,8 +19,14 @@ case "$target" in
       --output "$source_archive"
     mkdir "$work/source" "$work/out"
     tar -xzf "$source_archive" -C "$work/source" --strip-components=1
+    host_uid=$(id -u)
+    host_gid=$(id -g)
     docker run --rm --platform "linux/$docker_arch" \
+      --env "HOST_UID=$host_uid" --env "HOST_GID=$host_gid" \
       -v "$work:/work" alpine:3.23 sh -euxc '
+        # The container builds as root; return the mounted tree to the runner
+        # before the host EXIT trap removes it, even when a build step fails.
+        trap "chown -R \${HOST_UID}:\${HOST_GID} /work" EXIT
         apk add --no-cache build-base linux-headers mesa-dev libx11-dev \
           libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
         mkdir -p /work/out/include /work/out/lib /work/out/sysroot/usr/lib
