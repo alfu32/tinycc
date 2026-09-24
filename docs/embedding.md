@@ -44,7 +44,20 @@ input and publishes these extra GitHub Release assets:
   verbatim to `main` exported by the bundled `tcc-driver` shared library, so
   this works exactly as with `tcc`: `java -jar tinycc-cli.jar input.c -luuid
   -o output`. No child `tcc` executable is spawned. The optional leading
-  `exe` is ignored and leading `dll` adds `-shared`.
+  `exe` is ignored and leading `dll` adds `-shared`. Add `--target` followed
+  by one of `linux-x86_64`, `linux-aarch64`, `windows-x86_64`,
+  `windows-aarch64`, `macos-x86_64`, or `macos-aarch64` to select the
+  cross-target driver, for example:
+
+      java -jar tinycc-cli.jar --target linux-aarch64 input.c -o output
+
+  Linux and Windows target sysroots are selected from the matching native
+  payload embedded in the JAR; an explicit `--sysroot` overrides that default.
+  Windows cross drivers read LLVM-MinGW COFF import archives directly and
+  include TinyCC's runtime `.def` files for the CRT support objects.
+  macOS SDKs are not bundled, so cross-compiling to macOS requires the SDK to
+  be provisioned by the user (and supplied with `--sysroot` when the host
+  compiler cannot discover it).
 - `tinycc-embed.jar` is the drop-in Java/Kotlin library. It bundles the JNI
   bridge and all six native TinyCC payloads, selects the current host, extracts
   it once, and exposes `TinyCC.compileExecutable()` and
@@ -54,7 +67,8 @@ input and publishes these extra GitHub Release assets:
   `dll`). It accepts the complete native TCC command line too, for example
   `python3 tinycc.pyz input.c -luuid -o output`, by calling the exported
   `main` in `tcc-driver` through `ctypes`. Its `tinycc.Compiler` class is
-  also a direct `ctypes` API.
+  also a direct `ctypes` API. The command line accepts the same `--target`
+  triples as the JAR and calls the corresponding host-loadable cross driver.
 
 The CLI can also compile a conventional C `main` into a shared library and
 generate an adjacent Python, Java, or Kotlin launcher:
@@ -69,6 +83,11 @@ generated launcher forwards its own arguments to `int main(int argc, char
 **argv)` and exits with the return value of `main`. `kotln` is accepted as an
 alias for `kotlin`. Use `-o path/to/library` to choose a different native
 library name. All remaining arguments are passed to TinyCC.
+
+The direct `TinyCC.compile*()` Java API and `Compiler.compile()` Python API use
+the host-target `libtcc` library so their synchronous diagnostic callbacks
+remain available. Use `executeTcc()` or the CLI facade with `--target` for
+cross-target executable or shared-library output.
 
 Java and Kotlin launcher sources use `tinycc-embed.jar` to call the exported
 library entry point. Compile them with that JAR on the classpath; a Kotlin

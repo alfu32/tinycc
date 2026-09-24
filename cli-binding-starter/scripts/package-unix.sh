@@ -10,10 +10,11 @@ source_root=$(pwd)
 release_root="$source_root/.release/$platform_id"
 payload_root="$release_root/tinycc"
 sysroot_bundle="${SYSROOT_BUNDLE:-$source_root/sysroots-bundle-2026.09.21.tar.zst}"
+cross_sysroots_root=
 
 case "$(uname -s)" in
-  Linux)  shared_name=libtcc.so ;;
-  Darwin) shared_name=libtcc.dylib ;;
+  Linux)  shared_name=libtcc.so; driver_name=tcc-driver.so ;;
+  Darwin) shared_name=libtcc.dylib; driver_name=tcc-driver.dylib ;;
   *) echo "unsupported host: $(uname -s)" >&2; exit 2 ;;
 esac
 
@@ -30,7 +31,8 @@ if [[ "$(uname -s)" == Linux ]]; then
   sysroot_stage=$(mktemp -d)
   trap 'rm -rf "$sysroot_stage"' EXIT
   tar --zstd -xf "$sysroot_bundle" -C "$sysroot_stage"
-  sysroot_source="$sysroot_stage/sysroots-bundle-2026.09.21/sysroots/linux/$sysroot_arch"
+  cross_sysroots_root="$sysroot_stage/sysroots-bundle-2026.09.21/sysroots"
+  sysroot_source="$cross_sysroots_root/linux/$sysroot_arch"
   test -d "$sysroot_source/usr/include" || {
     echo "sysroot has no headers for $platform_id" >&2
     exit 2
@@ -43,7 +45,11 @@ fi
 
 # Build the command-line compiler against static libtcc.  That makes the
 # executable itself relocatable; the launcher below supplies its runtime tree.
-./configure --prefix=/tinycc
+configure_options=(--prefix=/tinycc)
+if [[ "$(uname -s)" == Linux ]]; then
+  configure_options+=(--config-musl)
+fi
+./configure "${configure_options[@]}" --enable-cross
 make -j2
 make test -k
 make DESTDIR="$release_root" install
@@ -57,13 +63,34 @@ cp COPYING README VERSION "$payload_root/"
 # The Java/Python facades call its main function through FFI.
 "$payload_root/bin/tcc-bin" -B"$payload_root/lib/tcc" \
   -I"$source_root/include" -I"$source_root" -shared -fPIC -rdynamic \
+  -DTCC_DRIVER_DLL -DONE_SOURCE=1 \
   "$source_root/tcc.c" "$payload_root/lib/libtcc.a" \
-  -o "$payload_root/lib/tcc-driver.so"
+  -o "$payload_root/lib/$driver_name"
+
+# The facade uses the host-native shared objects below through FFI. Each one
+# contains the selected target backend; the cross support archives come from
+# the same --enable-cross build above.
+case "$(uname -s)" in
+  Linux)  host_os=linux ;;
+  Darwin) host_os=macos ;;
+esac
+cross_bundle_args=(
+  --compiler "$payload_root/bin/tcc-bin" \
+  --source-root "$source_root" \
+  --native-runtime "$payload_root/lib/tcc" \
+  --output-root "$payload_root/lib/cross" \
+  --host "$host_os" \
+  --prebuilt-runtime-root "$source_root"
+)
+if [[ -n "$cross_sysroots_root" ]]; then
+  cross_bundle_args+=(--sysroots-root "$cross_sysroots_root")
+fi
+python3 scripts/build-cross-bundles.py "${cross_bundle_args[@]}"
 
 # libtcc's objects need a separate PIC build for the shared library.  Keep the
 # already-installed static archive and runtime tree from the first build.
 make distclean
-./configure --prefix=/tinycc --disable-static
+./configure "${configure_options[@]}" --disable-static
 make -j2 "$shared_name"
 cp "$shared_name" "$payload_root/lib/$shared_name"
 

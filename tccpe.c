@@ -1673,6 +1673,218 @@ static int read_mem(int fd, unsigned offset, void *buffer, unsigned len)
     return len == read(fd, buffer, len);
 }
 
+static int pe_archive_member_name(int fd, const char *archive_name,
+                                  char *name, unsigned name_size)
+{
+    unsigned long name_offset, offset;
+    char *end;
+    size_t raw_len = strlen(archive_name);
+
+    if (archive_name[0] != '/' || archive_name[1] < '0' || archive_name[1] > '9') {
+        if (raw_len >= name_size)
+            raw_len = name_size - 1;
+        memcpy(name, archive_name, raw_len);
+        name[raw_len] = '\0';
+        if (raw_len && name[raw_len - 1] == '/')
+            name[--raw_len] = '\0';
+        return raw_len != 0;
+    }
+
+    name_offset = strtoul(archive_name + 1, &end, 10);
+    if (*end)
+        return 0;
+    for (offset = sizeof ARMAG - 1; ; ) {
+        unsigned char header[60];
+        char size_text[11];
+        unsigned long member_size;
+        if (!read_mem(fd, offset, header, sizeof header)
+            || header[58] != '`' || header[59] != '\n')
+            return 0;
+        memcpy(size_text, header + 48, 10);
+        size_text[10] = '\0';
+        member_size = strtoul(size_text, NULL, 10);
+        if (header[0] == '/' && header[1] == '/') {
+            unsigned char *table;
+            char *finish;
+            size_t len;
+            if (name_offset >= member_size)
+                return 0;
+            table = tcc_malloc(member_size);
+            if (!read_mem(fd, offset + sizeof header, table, member_size)) {
+                tcc_free(table);
+                return 0;
+            }
+            finish = memchr(table + name_offset, '\n', member_size - name_offset);
+            if (!finish) {
+                tcc_free(table);
+                return 0;
+            }
+            len = finish - (char *)table - name_offset;
+            if (len && table[name_offset + len - 1] == '/')
+                --len;
+            if (len >= name_size)
+                len = name_size - 1;
+            memcpy(name, table + name_offset, len);
+            name[len] = '\0';
+            tcc_free(table);
+            return len != 0;
+        }
+        offset += sizeof header + member_size + (member_size & 1);
+    }
+}
+
+static const char *pe_import_name(const char *name)
+{
+    if (0 == strncmp(name, "__imp_", 6))
+        name += 6;
+    else if (0 == strncmp(name, "_imp__", 6))
+        name += 6;
+    else if (0 == strncmp(name, "_imp_", 5))
+        name += 5;
+    return name;
+}
+
+static int pe_add_archive_import(TCCState *s1, const char *dllname,
+                                 const char *symbol, const char *wanted)
+{
+    const char *name = pe_import_name(symbol);
+    const char *match = wanted ? pe_import_name(wanted) : NULL;
+    DLLReference *ref;
+
+    if (!*name || *name == '.' || (unsigned char)*name == 0x7f
+        || !strncmp(name, "__IMPORT_DESCRIPTOR_", 20)
+        || !strncmp(name, "__NULL_IMPORT_DESCRIPTOR", 24)
+        || !strncmp(name, "__NULL_THUNK_DATA", 17))
+        return 0;
+    if (match && strcmp(name, match))
+        return 0;
+    ref = tcc_add_dllref(s1, dllname, 0);
+    pe_putimport(s1, ref->index, name, 0);
+    return 1;
+}
+
+/* Load one LLVM-MinGW COFF import member from an archive. Such members carry
+   import symbols in .idata$ sections and are not ELF objects, so the generic
+   archive loader cannot consume them. Return one when handled. */
+ST_FUNC int pe_load_import_obj(TCCState *s1, int fd, unsigned offset,
+                               unsigned size, const char *archive_name,
+                               const char *wanted)
+{
+    unsigned char header[20], section[40], record[18], name_field[8];
+    unsigned section_count, symbol_offset, symbol_count, optional_size;
+    unsigned string_offset, string_size, sections_offset, i, index;
+    unsigned char *strings = NULL;
+    char dllname[128], symbol[1024];
+    int is_import = 0, handled = 0;
+    size_t name_len;
+
+    if (size < sizeof header || !read_mem(fd, offset, header, sizeof header))
+        return 0;
+    dllname[0] = '\0';
+    if (header[0] == 0 && header[1] == 0
+        && header[2] == 0xff && header[3] == 0xff) {
+        unsigned data_size = read32le(header + 12);
+        unsigned char *data;
+        char *dll;
+        if (data_size > size - sizeof header || data_size < 3)
+            return 0;
+        data = tcc_malloc(data_size);
+        if (!read_mem(fd, offset + sizeof header, data, data_size)) {
+            tcc_free(data);
+            return 0;
+        }
+        symbol[sizeof symbol - 1] = '\0';
+        name_len = strnlen((char *)data, data_size);
+        if (name_len >= sizeof symbol || name_len == data_size) {
+            tcc_free(data);
+            return 0;
+        }
+        memcpy(symbol, data, name_len);
+        symbol[name_len] = '\0';
+        dll = (char *)data + name_len + 1;
+        if (dll >= (char *)data + data_size
+            || !memchr(dll, '\0', (char *)data + data_size - dll)) {
+            tcc_free(data);
+            return 0;
+        }
+        pstrcpy(dllname, sizeof dllname, dll);
+        tcc_free(data);
+        return pe_add_archive_import(s1, dllname, symbol, wanted);
+    }
+
+    section_count = read16le(header + 2);
+    symbol_offset = read32le(header + 8);
+    symbol_count = read32le(header + 12);
+    optional_size = read16le(header + 16);
+    sections_offset = sizeof header + optional_size;
+    if (!section_count || sections_offset > size
+        || section_count > (size - sections_offset) / sizeof section)
+        return 0;
+    for (i = 0; i < section_count; ++i) {
+        if (!read_mem(fd, offset + sections_offset + i * sizeof section,
+                      section, sizeof section))
+            return 0;
+        if (0 == memcmp(section, ".idata$", 7)
+            || 0 == memcmp(section, ".idata\0", 7))
+            is_import = 1;
+    }
+    if (!is_import || !symbol_offset || !symbol_count
+        || symbol_offset > size
+        || symbol_count > (size - symbol_offset) / sizeof record)
+        return 0;
+    string_offset = symbol_offset + symbol_count * sizeof record;
+    if (string_offset > size || size - string_offset < 4
+        || !read_mem(fd, offset + string_offset, header, 4))
+        return 0;
+    string_size = read32le(header);
+    if (string_size < 4 || string_size > size - string_offset)
+        return 0;
+    strings = tcc_malloc(string_size);
+    if (!read_mem(fd, offset + string_offset, strings, string_size))
+        goto done;
+
+    if (!pe_archive_member_name(fd, archive_name, dllname, sizeof dllname))
+        goto done;
+    handled = 1;
+
+    for (index = 0; index < symbol_count; ) {
+        unsigned long symbol_file_offset = offset + symbol_offset + index * sizeof record;
+        int section_number, storage_class, auxiliary_count;
+        if (!read_mem(fd, symbol_file_offset, record, sizeof record))
+            goto done;
+        memcpy(name_field, record, sizeof name_field);
+        if (0 == read32le(name_field)) {
+            unsigned name_offset = read32le(name_field + 4);
+            unsigned n;
+            if (name_offset < 4 || name_offset >= string_size)
+                goto next_symbol;
+            n = string_size - name_offset;
+            if (n >= sizeof symbol)
+                n = sizeof symbol - 1;
+            memcpy(symbol, strings + name_offset, n);
+            symbol[n] = '\0';
+            if (!memchr(symbol, '\0', n))
+                goto next_symbol;
+        } else {
+            memcpy(symbol, name_field, sizeof name_field);
+            symbol[sizeof name_field] = '\0';
+        }
+        section_number = (short)read16le(record + 12);
+        storage_class = record[16];
+        auxiliary_count = record[17];
+        if (storage_class == 2 && section_number > 0
+            && pe_add_archive_import(s1, dllname, symbol, wanted)) {
+            if (wanted)
+                break;
+        }
+next_symbol:
+        index += 1 + auxiliary_count;
+    }
+done:
+    tcc_free(strings);
+    return handled;
+}
+
 /* ------------------------------------------------------------- */
 
 static int get_dllexports(int fd, char **pp)

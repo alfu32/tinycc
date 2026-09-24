@@ -287,7 +287,17 @@ static unsigned getclock_ms(void)
 #endif
 }
 
-int main(int argc, char **argv)
+#ifdef TCC_DRIVER_DLL
+# ifdef _WIN32
+#  define TCC_DRIVER_EXPORT __declspec(dllexport)
+# else
+#  define TCC_DRIVER_EXPORT __attribute__((visibility("default")))
+# endif
+#else
+# define TCC_DRIVER_EXPORT
+#endif
+
+TCC_DRIVER_EXPORT int main(int argc, char **argv)
 {
     TCCState *s, *s1;
     int ret, opt, n = 0, t = 0, done;

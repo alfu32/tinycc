@@ -55,7 +55,7 @@ if errorlevel 1 (
 rem Expose the complete tcc.c command-line driver as a DLL export.  The JVM
 rem and Python facades invoke this main function through FFI; they never spawn
 rem tcc.exe.
-tcc.exe -shared -rdynamic ..\tcc.c -L. -ltcc -o tcc-driver.dll
+tcc.exe -shared -rdynamic -DTCC_DRIVER_DLL ..\tcc.c -L. -ltcc -o tcc-driver.dll
 if errorlevel 1 (
   popd
   exit /b 1
@@ -89,6 +89,12 @@ copy /y "%ROOT%\libtcc.h" "%PAYLOAD%\include\libtcc.h" >nul
 copy /y "%ROOT%\COPYING" "%PAYLOAD%\COPYING" >nul
 copy /y "%ROOT%\README" "%PAYLOAD%\README" >nul
 copy /y "%ROOT%\VERSION" "%PAYLOAD%\VERSION" >nul
+
+rem Build host-loadable compiler drivers and target libtcc1 archives for all
+rem release triples. The Python helper calls each exported main through FFI;
+rem it does not spawn the packaged tcc executable for user compilations.
+python "%ROOT%\scripts\build-cross-bundles.py" --compiler "%ROOT%\win32\tcc.exe" --source-root "%ROOT%" --native-runtime "%PAYLOAD%\bin" --output-root "%PAYLOAD%\bin\cross" --host windows --sysroots-root "%SYSROOT_STAGE%\sysroots-bundle-2026.09.21\sysroots"
+if errorlevel 1 exit /b %errorlevel%
 
 rem libtcc.dll derives its private runtime location from its own directory.
 "%PAYLOAD%\bin\tcc.exe" -B "%PAYLOAD%\bin" --sysroot "%PAYLOAD%\sysroot" -run "%ROOT%\examples\ex1.c"

@@ -163,6 +163,10 @@ X = $(if $(CROSS_TARGET),$(CROSS_TARGET)-)
 
 ifneq ($(T),$(NATIVE_TARGET))
 $(if $(DEF-$T),,$(error error: unknown target: '$T'))
+ifeq ($(CONFIG_musl),yes)
+ELF-x86_64 = /lib/ld-musl-x86_64.so.1
+ELF-arm64 = /lib/ld-musl-aarch64.so.1
+endif
 ifneq ($(CONFIG_WIN32),yes)
 DEF-win = -DCONFIG_TCCDIR="\"$(tccdir)/win32\""
 endif

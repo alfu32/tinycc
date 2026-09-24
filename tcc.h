@@ -1764,6 +1764,9 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str);
 /* ------------ tccpe.c -------------- */
 #ifdef TCC_TARGET_PE
 ST_FUNC int pe_load_file(struct TCCState *s1, int fd, const char *filename);
+ST_FUNC int pe_load_import_obj(struct TCCState *s1, int fd, unsigned offset,
+                              unsigned size, const char *archive_name,
+                              const char *symbol);
 ST_FUNC int pe_output_file(TCCState * s1, const char *filename);
 ST_FUNC int pe_putimport(TCCState *s1, int dllindex, const char *name, addr_t value);
 ST_FUNC int pe_setsubsy(TCCState *s1, const char *arg);

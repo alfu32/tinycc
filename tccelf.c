@@ -3656,6 +3656,11 @@ static int tcc_load_alacarte(TCCState *s1, int fd, int size, int entrysize)
             off += len;
             if (s1->verbose == 2)
                 printf("   -> %s\n", hdr.ar_name);
+#ifdef TCC_TARGET_PE
+            len = strtol(hdr.ar_size, NULL, 0);
+            if (len > 0 && pe_load_import_obj(s1, fd, off, len, hdr.ar_name, p))
+                continue;
+#endif
             if (tcc_load_object_file(s1, fd, off) < 0)
                 goto the_end;
             ++bound;
@@ -3694,6 +3699,13 @@ ST_FUNC int tcc_load_archive(TCCState *s1, int fd, int alacarte)
                 return tcc_load_alacarte(s1, fd, size, 4);
             if (!strcmp(hdr.ar_name, "/SYM64/"))
                 return tcc_load_alacarte(s1, fd, size, 8);
+#ifdef TCC_TARGET_PE
+        } else if (size > 0 && pe_load_import_obj(s1, fd, file_offset,
+                                                   size, hdr.ar_name, NULL)) {
+            /* LLVM-MinGW import archive member; its symbols are PE imports,
+               not relocatable objects understood by tcc_load_object_file. */
+            ;
+#endif
         } else if (tcc_object_type(fd, &ehdr) == AFF_BINTYPE_REL) {
             if (s1->verbose == 2)
                 printf("   -> %s\n", hdr.ar_name);

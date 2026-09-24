@@ -51,7 +51,7 @@ public final class Main {
         }
 
         Path sourcePath = Path.of(args[2]).toAbsolutePath();
-        Path libraryPath = defaultLibraryPath(sourcePath);
+        Path libraryPath = defaultLibraryPath(sourcePath, launcherTargetPlatform(args));
         List<String> tccArguments = new ArrayList<>();
         tccArguments.add("-shared");
         tccArguments.add("-rdynamic");
@@ -102,13 +102,33 @@ public final class Main {
         System.exit(2);
     }
 
-    private static Path defaultLibraryPath(Path sourcePath) {
+    private static Path defaultLibraryPath(Path sourcePath, String targetPlatform) {
         String name = sourcePath.getFileName().toString();
         int suffix = name.lastIndexOf('.');
         String stem = suffix > 0 ? name.substring(0, suffix) : name;
-        String os = System.getProperty("os.name").toLowerCase();
-        String extension = os.contains("win") ? ".dll" : os.contains("mac") ? ".dylib" : ".so";
+        String os = targetPlatform == null ? System.getProperty("os.name").toLowerCase() : targetPlatform;
+        String extension = os.startsWith("windows") || os.contains("win")
+                ? ".dll" : os.startsWith("macos") || os.contains("mac") ? ".dylib" : ".so";
         return sourcePath.resolveSibling(stem + extension);
+    }
+
+    private static String launcherTargetPlatform(String[] args) {
+        for (int index = 3; index < args.length; index++) {
+            if (args[index].equals("--")) {
+                break;
+            }
+            String target = null;
+            if (args[index].equals("--target") && index + 1 < args.length) {
+                target = args[++index];
+            } else if (args[index].startsWith("--target=")) {
+                target = args[index].substring("--target=".length());
+            }
+            if (target != null) {
+                int separator = target.indexOf('-');
+                return separator < 0 ? target : target.substring(0, separator);
+            }
+        }
+        return null;
     }
 
     private static Path launcherPath(Path libraryPath, String language, String className) {

@@ -16,7 +16,7 @@ jobs:
   unix:
     name: ${{ matrix.id }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 12
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -46,7 +46,7 @@ jobs:
   windows:
     name: ${{ matrix.id }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 12
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -65,6 +65,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Set up MSVC and build bundle
         shell: cmd
         run: |

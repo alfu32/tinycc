@@ -5,7 +5,9 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Self-contained JNI access to the libtcc compiler.
@@ -15,6 +17,14 @@ import java.util.Locale;
  * temporary directory before being loaded.</p>
  */
 public final class TinyCC {
+    private static final Map<String, CrossTarget> CROSS_TARGETS = Map.ofEntries(
+            Map.entry("linux-x86_64", new CrossTarget("linux-x86_64")),
+            Map.entry("linux-aarch64", new CrossTarget("linux-aarch64")),
+            Map.entry("windows-x86_64", new CrossTarget("windows-x86_64")),
+            Map.entry("windows-aarch64", new CrossTarget("windows-aarch64")),
+            Map.entry("macos-x86_64", new CrossTarget("macos-x86_64")),
+            Map.entry("macos-aarch64", new CrossTarget("macos-aarch64")));
+
     public enum OutputType {
         EXECUTABLE(2),
         DYNAMIC_LIBRARY(4);
@@ -78,24 +88,76 @@ public final class TinyCC {
      * No child executable is spawned; the driver DLL/SO is loaded with JNI.
      */
     public static int executeTcc(String... arguments) {
+        List<String> tccArguments = new java.util.ArrayList<>();
+        CrossTarget selectedTarget = null;
+        for (int index = 0; index < arguments.length; index++) {
+            String argument = arguments[index];
+            if (argument.equals("--")) {
+                for (; index < arguments.length; index++) {
+                    tccArguments.add(arguments[index]);
+                }
+                break;
+            }
+            if (argument.equals("--target")) {
+                if (++index == arguments.length) {
+                    throw new IllegalArgumentException("--target requires a target triple");
+                }
+                if (selectedTarget != null) {
+                    throw new IllegalArgumentException("--target may be specified only once");
+                }
+                selectedTarget = crossTarget(arguments[index]);
+            } else if (argument.startsWith("--target=")) {
+                if (selectedTarget != null) {
+                    throw new IllegalArgumentException("--target may be specified only once");
+                }
+                selectedTarget = crossTarget(argument.substring("--target=".length()));
+            } else {
+                tccArguments.add(argument);
+            }
+        }
+
+        Path driver = NATIVE_BUNDLE.driver();
+        Path runtimeDirectory = RUNTIME_DIRECTORY;
+        Path sysroot = NATIVE_BUNDLE.sysroot();
+        if (selectedTarget != null) {
+            driver = NATIVE_BUNDLE.nativeDirectory().resolve("cross")
+                    .resolve(selectedTarget.platform()).resolve("tcc-driver" + nativeLibrarySuffix());
+            runtimeDirectory = driver.getParent();
+            sysroot = targetSysroot(selectedTarget.platform());
+        }
+
         boolean hasSysroot = false;
-        for (String argument : arguments) {
+        for (String argument : tccArguments) {
             if (argument.equals("--sysroot") || argument.startsWith("--sysroot=")) {
                 hasSysroot = true;
                 break;
             }
         }
-        int injected = NATIVE_BUNDLE.sysroot() != null && !hasSysroot ? 2 : 0;
-        String[] driverArguments = new String[arguments.length + 2 + injected];
+        boolean bundledWindowsLibraries = selectedTarget != null
+                && selectedTarget.platform().startsWith("windows-") && !hasSysroot;
+        int injected = (selectedTarget == null ? 0 : 2)
+                + (bundledWindowsLibraries ? 2 : 0)
+                + (sysroot != null && !hasSysroot ? 2 : 0);
+        String[] driverArguments = new String[tccArguments.size() + 2 + injected];
         driverArguments[0] = "-B";
-        driverArguments[1] = RUNTIME_DIRECTORY.toString();
+        driverArguments[1] = runtimeDirectory.toString();
         int offset = 2;
-        if (injected != 0) {
-            driverArguments[offset++] = "--sysroot";
-            driverArguments[offset++] = NATIVE_BUNDLE.sysroot().toString();
+        if (selectedTarget != null) {
+            driverArguments[offset++] = "-L";
+            driverArguments[offset++] = runtimeDirectory.toString();
         }
-        System.arraycopy(arguments, 0, driverArguments, offset, arguments.length);
-        return runLibraryMain(NATIVE_BUNDLE.driver(), driverArguments);
+        if (bundledWindowsLibraries) {
+            driverArguments[offset++] = "-L";
+            driverArguments[offset++] = runtimeDirectory.resolve("lib").toString();
+        }
+        if (sysroot != null && !hasSysroot) {
+            driverArguments[offset++] = "--sysroot";
+            driverArguments[offset++] = sysroot.toString();
+        }
+        for (String argument : tccArguments) {
+            driverArguments[offset++] = argument;
+        }
+        return runLibraryMain(driver, driverArguments);
     }
 
     /**
@@ -169,6 +231,56 @@ public final class TinyCC {
             throw new IOException("missing resource: " + name);
         }
         return input;
+    }
+
+    private static CrossTarget crossTarget(String triple) {
+        CrossTarget target = CROSS_TARGETS.get(triple);
+        if (target == null) {
+            throw new IllegalArgumentException("unsupported target '" + triple + "'; expected one of "
+                    + String.join(", ", CROSS_TARGETS.keySet()));
+        }
+        return target;
+    }
+
+    private static String nativeLibrarySuffix() {
+        return NATIVE_BUNDLE.windows() ? ".dll"
+                : target().startsWith("macos-") ? ".dylib" : ".so";
+    }
+
+    private static synchronized Path targetSysroot(String platform) {
+        if (platform.startsWith("macos-")) {
+            return null;
+        }
+        if (platform.equals(target())) {
+            return NATIVE_BUNDLE.sysroot();
+        }
+        Path extractionRoot = NATIVE_BUNDLE.root().resolve("sysroots").resolve(platform);
+        Path destinationRoot = extractionRoot.resolve("tinycc/sysroot");
+        try (InputStream manifest = resource("native/" + platform + "/files.list")) {
+            String[] files = new String(manifest.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
+                    .split("\\R");
+            int extracted = 0;
+            for (String file : files) {
+                if (!file.startsWith("tinycc/sysroot/")) {
+                    continue;
+                }
+                Path destination = extractionRoot.resolve(file).normalize();
+                if (!destination.startsWith(extractionRoot)) {
+                    throw new IOException("invalid sysroot resource path");
+                }
+                Files.createDirectories(destination.getParent());
+                try (InputStream input = resource("native/" + platform + "/" + file)) {
+                    Files.copy(input, destination, StandardCopyOption.REPLACE_EXISTING);
+                }
+                extracted++;
+            }
+            return extracted == 0 ? null : destinationRoot;
+        } catch (IOException exception) {
+            throw new IllegalStateException("could not unpack sysroot for " + platform, exception);
+        }
+    }
+
+    private record CrossTarget(String platform) {
     }
 
     private static String target() {

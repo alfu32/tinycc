@@ -31,10 +31,50 @@ for archive in "${archives[@]}"; do
         *.zip) python3 scripts/extract-windows-archive.py "$archive" "$destination" ;;
     esac
     test -d "$destination/tinycc"
+    case "$platform" in
+        linux-*)
+            test -d "$destination/tinycc/sysroot/usr/include" \
+                && test -d "$destination/tinycc/sysroot/usr/lib" || {
+                echo "missing bundled Linux sysroot in $filename" >&2
+                exit 2
+            }
+            ;;
+        windows-*)
+            test -d "$destination/tinycc/sysroot/include" \
+                && test -d "$destination/tinycc/sysroot/lib" || {
+                echo "missing bundled Windows sysroot in $filename" >&2
+                exit 2
+            }
+            ;;
+    esac
     (
         cd "$destination"
         find tinycc -type f -print | LC_ALL=C sort > files.list
     )
+
+    case "$platform" in
+        windows-*) native_dir="$destination/tinycc/bin"; suffix=dll ;;
+        macos-*)   native_dir="$destination/tinycc/lib"; suffix=dylib ;;
+        *)         native_dir="$destination/tinycc/lib"; suffix=so ;;
+    esac
+    for target in linux-x86_64 linux-aarch64 windows-x86_64 windows-aarch64 macos-x86_64 macos-aarch64; do
+        test -f "$native_dir/cross/$target/tcc-driver.$suffix" || {
+            echo "missing $platform FFI driver for cross target $target" >&2
+            exit 2
+        }
+        case "$target" in
+            linux-x86_64) runtime=x86_64-libtcc1.a ;;
+            linux-aarch64) runtime=arm64-libtcc1.a ;;
+            windows-x86_64) runtime=x86_64-win32-libtcc1.a ;;
+            windows-aarch64) runtime=arm64-win32-libtcc1.a ;;
+            macos-x86_64) runtime=x86_64-osx-libtcc1.a ;;
+            macos-aarch64) runtime=arm64-osx-libtcc1.a ;;
+        esac
+        test -f "$native_dir/cross/$target/$runtime" || {
+            echo "missing $platform runtime archive for cross target $target" >&2
+            exit 2
+        }
+    done
 done
 
 classes="$work_directory/classes"

@@ -9,6 +9,8 @@ This is the working TinyCC baseline for the machinery that must be adapted:
 - `.github/workflows/release.yml` is the manual six-platform native build and
   release workflow.
 - `scripts/` builds native payloads and assembles the portable launchers.
+- The release build packages FFI-callable cross-target drivers and the matching
+  TCC runtime archives for Linux, Windows, and macOS target triples.
 - `bindings/` supplies the Java JNI facade, CLI facade, and Python package.
 - `sysroots-bundle-2026.09.21.tar.zst` supplies Linux musl and Windows
   LLVM-MinGW headers, libraries, and CRT files.
